@@ -1,8 +1,8 @@
 export const currentUser = {
-  id: 'u1',
-  name: 'Dr. Ahmed Al-Rashid',
-  email: 'arashid@kfupm.edu.sa',
-  role: 'coordinator',
+    id: 'u1',
+    name: 'Dr. Khadijah AlSafwan',
+    email: 'khadijah.safwan@kfupm.edu.sa',
+    role: 'coordinator',
 };
 
 // Term 252 academic calendar week start dates (Sunday-based)
