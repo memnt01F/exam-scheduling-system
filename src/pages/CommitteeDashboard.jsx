@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout.jsx';
 import { useCourses } from '../context/CoursesContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -160,23 +160,63 @@ const BookingOverview = ({ courses, formatSlotDate }) => {
 
 /* ── Level 1 Config Tab (FR-SC3) ── */
 const Level1Config = ({ formatSlotDate }) => {
-  const { anchorSlots, courses } = useCourses();
+  const { anchorSlots, courses, refreshAnchors, refreshBookings } = useCourses();
   const navigate = useNavigate();
 
-  // Build lookup: courseCode → anchor slot record
-  const slotMap = {};
-  anchorSlots.forEach(s => { slotMap[s.courseCode] = s; });
+  // Refresh anchor slots and bookings when this tab is opened
+  // so the status reflects what's actually in MongoDB
+  useEffect(() => {
+    refreshAnchors?.();
+    refreshBookings?.();
+  }, []);
 
-  const goToBooking = (courseCode) => {
-    // Find course in the courses array
-    const course = courses.find(c => c.code.replace(/\s+/g, '') === courseCode.replace(/\s+/g, ''));
+  const normalizeCode = (s) => String(s || '').replace(/\s+/g, '').toUpperCase();
+
+  // Anchor slots (committee-fixed planned slots)
+  const slotMap = {};
+  anchorSlots.forEach(s => {
+    const codeKey = normalizeCode(s.courseCode);
+    if (!codeKey) return;
+    if (!slotMap[codeKey]) slotMap[codeKey] = {};
+    slotMap[codeKey][s.examType] = s;
+  });
+
+  // Authoritative bookings (actual scheduled bookings from MongoDB)
+  const bookingMap = {};
+  courses.forEach(c => {
+    const codeKey = normalizeCode(c.code);
+    if (!codeKey) return;
+    bookingMap[codeKey] = c.bookings || {};
+  });
+
+  const goToBooking = (courseCode, examType) => {
+    const course = courses.find(c => normalizeCode(c.code) === normalizeCode(courseCode));
     if (!course) {
-      toast.error(`Course ${courseCode} not found.`);
+      toast.error(`Course ${courseCode} not found. Make sure it has been added in Reference Data.`);
       return;
     }
-    const existingSlot = slotMap[courseCode];
-    const examType = existingSlot?.examType || '';
     navigate(`/booking/${course.id}?from=committee${examType ? `&examType=${encodeURIComponent(examType)}` : ''}`);
+  };
+
+  // Determine booking status for a course
+  const getStatus = (code) => {
+    const bookings = bookingMap[normalizeCode(code)] || {};
+    const hasMid = !!bookings['Mid'];
+    const hasMajor1 = !!bookings['Major 1'];
+    const hasMajor2 = !!bookings['Major 2'];
+    if (hasMid) return 'fully_booked';
+    if (hasMajor1 && hasMajor2) return 'fully_booked';
+    if (hasMajor1 || hasMajor2) return 'partially_booked';
+    return 'not_booked';
+  };
+
+  // What exam type to book next — only missing ones
+  const getNextExamType = (code) => {
+    const bookings = bookingMap[normalizeCode(code)] || {};
+    if (!bookings['Major 1'] && !bookings['Major 2']) return 'Major 1';
+    if (!bookings['Major 1']) return 'Major 1';
+    if (!bookings['Major 2']) return 'Major 2';
+    return null;
   };
 
   return (
@@ -194,29 +234,93 @@ const Level1Config = ({ formatSlotDate }) => {
               <tr>
                 <th>Course</th>
                 <th>Name</th>
-                <th>Exam Type</th>
-                <th>Week</th>
-                <th>Date</th>
+                <th>Bookings</th>
+                <th>Status</th>
                 <th>Action</th>
               </tr>
             </thead>
             <tbody>
               {anchorEligibleCourses.map(c => {
-                const slot = slotMap[c.code];
+                const codeKey = normalizeCode(c.code);
+                const slots = slotMap[codeKey] || {};
+                const bookings = bookingMap[codeKey] || {};
+                const status = getStatus(c.code);
+                const nextType = getNextExamType(c.code);
+
                 return (
                   <tr key={c.code}>
                     <td><strong>{c.code}</strong></td>
                     <td>{c.name}</td>
-                    <td>{slot ? <span className="badge badge-outline" style={{ fontSize: 10 }}>{slot.examType}</span> : <span className="text-muted">—</span>}</td>
-                    <td>{slot?.week ?? '—'}</td>
-                    <td>{slot?.date ?? '—'}</td>
+
+                    {/* Booking slots summary */}
                     <td>
-                      <button
-                        className={`btn btn-sm ${slot ? 'btn-outline' : 'btn-primary'}`}
-                        onClick={() => goToBooking(c.code)}
-                      >
-                        {slot ? 'Edit' : 'Book'}
-                      </button>
+                      {bookings['Mid'] ? (
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <span className="badge badge-outline" style={{ fontSize: 10, borderColor: 'var(--clr-primary)', color: 'var(--clr-primary)' }}>
+                            Mid ✓ {formatSlotDate(bookings['Mid'].week, bookings['Mid'].day)}
+                          </span>
+                        </div>
+                      ) : (bookings['Major 1'] || bookings['Major 2'] || slots['Major 1'] || slots['Major 2']) ? (
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          <span className="badge badge-outline" style={{
+                            fontSize: 10,
+                            borderColor: bookings['Major 1'] ? 'var(--clr-primary)' : undefined,
+                            color: bookings['Major 1'] ? 'var(--clr-primary)' : undefined,
+                          }}>
+                            Major 1 {bookings['Major 1'] ? `✓ ${formatSlotDate(bookings['Major 1'].week, bookings['Major 1'].day)}` : '○ Pending'}
+                          </span>
+                          <span className="badge badge-outline" style={{
+                            fontSize: 10,
+                            borderColor: bookings['Major 2'] ? 'var(--clr-primary)' : undefined,
+                            color: bookings['Major 2'] ? 'var(--clr-primary)' : undefined,
+                          }}>
+                            Major 2 {bookings['Major 2'] ? `✓ ${formatSlotDate(bookings['Major 2'].week, bookings['Major 2'].day)}` : '○ Pending'}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-muted">—</span>
+                      )}
+                    </td>
+
+                    {/* Status */}
+                    <td>
+                      {status === 'fully_booked' && (
+                        <span className="badge badge-primary" style={{ fontSize: 10 }}>Booked</span>
+                      )}
+                      {status === 'partially_booked' && (
+                        <span className="badge" style={{ fontSize: 10, background: 'var(--clr-warning-bg, #fff7e6)', color: 'var(--clr-warning, #e68a00)' }}>
+                          Partial Booking
+                        </span>
+                      )}
+                      {status === 'not_booked' && (
+                        <span className="badge badge-outline" style={{ fontSize: 10 }}>Not Booked</span>
+                      )}
+                    </td>
+
+                    {/* Action */}
+                    <td>
+                      {status === 'fully_booked' ? (
+                        <button
+                          className="btn btn-outline btn-sm"
+                          onClick={() => goToBooking(c.code, bookings['Mid'] ? 'Mid' : 'Major 1')}
+                        >
+                          Edit
+                        </button>
+                      ) : status === 'partially_booked' ? (
+                        <button
+                          className="btn btn-primary btn-sm"
+                          onClick={() => goToBooking(c.code, nextType)}
+                        >
+                          Complete Booking →
+                        </button>
+                      ) : (
+                        <button
+                          className="btn btn-primary btn-sm"
+                          onClick={() => goToBooking(c.code, 'Major 1')}
+                        >
+                          Book
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );
@@ -233,7 +337,7 @@ const Level1Config = ({ formatSlotDate }) => {
 
 /* ── Phase Management Tab (FR-SC4) ── */
 const PhaseManagement = () => {
-  const { phases, updatePhases, addAuditLog } = useCourses();
+  const { phases, saveAllPhases, addAuditLog } = useCourses();
   const { user } = useAuth();
   const [localPhases, setLocalPhases] = useState(phases.map(p => ({ ...p })));
 
@@ -314,7 +418,7 @@ const PhaseManagement = () => {
           </div>
         </div>
       ))}
-      <button className="btn btn-primary" onClick={() => {
+      <button className="btn btn-primary" onClick={async () => {
         // Log phase changes
         localPhases.forEach((lp, idx) => {
           const old = phases[idx];
@@ -333,8 +437,8 @@ const PhaseManagement = () => {
             });
           }
         });
-        updatePhases(localPhases);
-        toast.success('Phase configuration saved');
+        const result = await saveAllPhases(localPhases.map(p => ({ ...p, updatedBy: user?.name || 'Committee', role: 'committee' })));
+        toast.success(result?.offline ? 'Phase configuration saved (local only — backend offline)' : 'Phase configuration saved');
       }}>Save Phase Configuration</button>
     </div>
   );
@@ -474,16 +578,22 @@ const AuditLog = () => {
     booking_created: 'Booking Created',
     booking_rescheduled: 'Booking Rescheduled',
     booking_deleted: 'Booking Deleted',
+    booking_conflict: 'Booking Conflict',
     phase_activated: 'Phase Activated',
     phase_deactivated: 'Phase Deactivated',
     phase_updated: 'Phase Updated',
     level1_configured: 'Level 1 Configured',
-    user_role_changed: 'Role Changed',
+    level1_removed: 'Level 1 Removed',
+    user_role_changed: 'User Updated',
     user_deactivated: 'User Deactivated',
     user_activated: 'User Activated',
     user_deleted: 'User Deleted',
     user_created: 'User Created',
+    course_created: 'Course Created',
+    course_updated: 'Course Updated',
+    course_deleted: 'Course Deleted',
     term_created: 'Term Created',
+    term_activated: 'Term Activated',
   };
 
   return (
@@ -520,8 +630,26 @@ const AuditLog = () => {
 
 /* ── Main Committee Dashboard ── */
 const CommitteeDashboard = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState('overview');
   const { courses, examSlots, formatSlotDate } = useCourses();
+
+  // Persist active tab in the URL (?tab=...) so refresh/back/forward keep state.
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (!tab) return;
+    const valid = tabs.some(t => t.id === tab);
+    if (valid && tab !== activeTab) setActiveTab(tab);
+    // If invalid, silently ignore and keep default.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  const setTab = (tabId) => {
+    setActiveTab(tabId);
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', tabId);
+    setSearchParams(next, { replace: true });
+  };
 
   const renderTab = () => {
     switch (activeTab) {
@@ -550,7 +678,7 @@ const CommitteeDashboard = () => {
               <button
                 key={tab.id}
                 className={`tab-btn ${activeTab === tab.id ? 'tab-active' : ''}`}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => setTab(tab.id)}
               >
                 <Icon size={14} /> {tab.label}
               </button>

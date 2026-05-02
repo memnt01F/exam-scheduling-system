@@ -514,6 +514,7 @@ a { text-decoration: none; color: inherit; }
   border: 1.5px solid transparent;
   border-radius: 6px;
   background: transparent;
+  position: relative;
   cursor: pointer;
   font-family: inherit;
   transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
@@ -536,13 +537,28 @@ a { text-decoration: none; color: inherit; }
 }
 
 .exam-cal-day.selected {
-  background: var(--clr-primary);
+  /* Non-blocking selection: keep badges readable */
+  background: rgba(26, 122, 76, 0.08);
   border-color: var(--clr-primary);
-  box-shadow: 0 2px 8px rgba(26, 122, 76, 0.25);
+  box-shadow: 0 0 0 2px rgba(26, 122, 76, 0.22) inset;
 }
 .exam-cal-day.selected .exam-cal-daynum {
-  color: var(--clr-primary-fg);
+  color: var(--clr-fg);
   font-weight: 700;
+}
+
+/* Small selection mark without covering content */
+.exam-cal-day.selected::after {
+  content: "✓";
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--clr-primary);
+  opacity: 0.9;
+  z-index: 1;
+  pointer-events: none;
 }
 
 .exam-cal-day.has-bookings {
@@ -579,6 +595,8 @@ a { text-decoration: none; color: inherit; }
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  position: relative;
+  z-index: 2;
 }
 
 .blocked-badge {

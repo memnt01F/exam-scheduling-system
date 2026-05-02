@@ -1,7 +1,9 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useCourses } from '../context/CoursesContext.jsx';
-import { dateToWeekDay, bookedDateMap } from '../lib/mock-data.js';
+// FIX (Issue 3): removed bookedDateMap import from mock-data.js.
+// It contained 9 hardcoded fake bookings that appeared on the calendar
+// on every render regardless of what was in MongoDB.
 
 const DAY_HEADERS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -59,7 +61,21 @@ function getMonthGrid(year, month) {
 }
 
 const ExamCalendar = ({ examSlots, selectedDate, onSelectDate, courseCode }) => {
-  const { effectiveWeekStartDates, effectiveBlockedDates, effectiveTermStart, effectiveTermEnd } = useCourses();
+  const {
+    effectiveWeekStartDates,
+    effectiveBlockedDates,
+    effectiveTermStart,
+    effectiveTermEnd,
+    refreshBookings,
+    backendOnline,
+  } = useCourses();
+
+  // Always refresh global bookings when the calendar is opened so all users
+  // see the latest system-wide booking state (not filtered by user).
+  useEffect(() => {
+    if (!backendOnline) return;
+    refreshBookings();
+  }, [backendOnline, refreshBookings]);
 
   // Determine month range from term dates
   const termStartDate = new Date(effectiveTermStart + 'T00:00:00');
@@ -84,9 +100,11 @@ const ExamCalendar = ({ examSlots, selectedDate, onSelectDate, courseCode }) => 
 
   const teachingDates = useMemo(() => buildTeachingDates(effectiveWeekStartDates), [effectiveWeekStartDates]);
 
-  // Merge exam slot bookings with static bookedDateMap
+  // FIX (Issue 3): was const map = { ...bookedDateMap } which seeded the calendar
+  // with hardcoded fake bookings on every render. Now starts empty and builds
+  // entirely from live examSlots populated by CoursesContext from MongoDB.
   const dynamicBooked = useMemo(() => {
-    const map = { ...bookedDateMap };
+    const map = {};
     if (examSlots) {
       examSlots.flat().forEach((slot) => {
         if (slot.date && slot.bookedCourses.length > 0) {

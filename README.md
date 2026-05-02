@@ -1,4 +1,4 @@
-# Exam Scheduling System
+# Exam Ease — Exam Scheduling System
 
 A web-based exam scheduling and booking system built for KFUPM. It streamlines the coordination of exam slots across departments, course levels, and booking phases — supporting coordinators, scheduling committees, and system administrators through role-based dashboards.
 
@@ -25,46 +25,6 @@ A web-based exam scheduling and booking system built for KFUPM. It streamlines t
 | Routing     | React Router DOM v7                 |
 | State       | React Context API                   |
 | UI Library  | Lucide React (icons), Sonner (toasts) |
-
-## Project Structure
-
-```
-├── index.html              # Entry HTML
-├── package.json            # Dependencies and scripts
-├── vite.config.ts          # Vite configuration
-├── tailwind.config.ts      # Tailwind CSS configuration
-├── postcss.config.js       # PostCSS configuration
-├── .gitignore              # Git ignore rules
-├── public/                 # Static assets
-│   ├── placeholder.svg
-│   └── robots.txt
-└── src/
-    ├── main.jsx            # App entry point
-    ├── App.jsx             # Root component and routes
-    ├── index.css           # Global styles and design tokens
-    ├── components/         # Reusable UI components
-    │   ├── DashboardLayout.jsx
-    │   ├── ExamCalendar.jsx
-    │   ├── ui/             # Base UI primitives
-    │   └── admin/          # Admin-specific components
-    ├── context/            # React Context providers
-    │   ├── AuthContext.jsx
-    │   └── CoursesContext.jsx
-    ├── hooks/              # Custom React hooks
-    ├── lib/                # Utilities, mock data, helpers
-    │   ├── mock-data.js
-    │   ├── mock-admin-data.js
-    │   ├── anchor-courses.js
-    │   ├── ics-parser.js
-    │   └── utils.js
-    └── pages/              # Page-level route components
-        ├── Login.jsx
-        ├── Dashboard.jsx
-        ├── BookingPage.jsx
-        ├── CommitteeDashboard.jsx
-        ├── AdminDashboard.jsx
-        └── NotFound.jsx
-```
 
 ## Prerequisites
 
@@ -140,15 +100,12 @@ The app uses mock authentication. Select a role from the login page:
 
 ## Team Members
 
-<!-- Fill in your team details below -->
+
 
 | Name | Role | Student ID |
 |------|------|------------|
-| Kaltham Alhashmi     |      |   202371470         |
-|      |      |            |
-|      |      |            |
-|      |      |            |
-
-
-
+| Kaltham Alhashmi     |   login and coordinator    |     202371470       |
+|   Jana Damdam   |   admin page   |     202323190       |
+|   Reem Alghuzawi   |    committee    |     202360310       |
+|   Maiss Khalaf   |   Admin and committee   |     202370470       |
 
