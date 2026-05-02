@@ -1,4 +1,4 @@
-# ExamEase — KFUPM Exam Scheduling System
+# KFUPM Exam Scheduling System
 
 A full-stack web application for managing and scheduling exams at KFUPM. Built with React (Vite) on the front-end and Node.js + Express.js + MongoDB Atlas on the back-end.
 
@@ -12,7 +12,6 @@ A full-stack web application for managing and scheduling exams at KFUPM. Built w
 
 - [Project Overview](#project-overview)
 - [Tech Stack](#tech-stack)
-- [Environment Variables](#environment-variables)
 - [Getting Started](#getting-started)
   - [Prerequisites](#prerequisites)
   - [Backend Setup](#backend-setup)
@@ -56,25 +55,6 @@ ExamEase allows department coordinators to book exam slots for their courses, wh
 
 ---
 
-## Environment Variables
-
-The backend requires a `.env` file inside the `backend/` folder. This file is **not committed to GitHub** for security reasons (it is listed in `.gitignore`).
-
-Create `backend/.env` with the following variables:
-
-```
-MONGO_URL=<your_mongodb_atlas_connection_string>
-PORT=5001
-```
-
-| Variable    | Description                                 | Required |
-|-------------|---------------------------------------------|----------|
-| `MONGO_URL` | MongoDB Atlas connection string             | ✅ Yes   |
-| `PORT`      | Port for the Express server (default: 5001) | Optional |
-
-> **Note:** Never commit your `.env` file or share your `MONGO_URL` publicly. It contains your database credentials.
-
----
 
 ## Getting Started
 
@@ -82,7 +62,7 @@ PORT=5001
 
 - **Node.js** v18 or higher
 - **npm** v9 or higher
-- A MongoDB Atlas account and cluster (connection string needed for `.env`)
+
 
 ---
 
@@ -95,13 +75,7 @@ cd backend
 # 2. Install dependencies
 npm install
 
-# 3. Create and configure your .env file
-#    Add your MONGO_URL and PORT as described in the Environment Variables section above.
-
-# 4. (Optional) Seed the database with enrollment data
-npm run seed
-
-# 5. Start the development server
+# 3. Start the development server
 npm run dev
 ```
 
@@ -151,7 +125,6 @@ Use the following credentials to log in and explore different roles.
 | Name | Email | Role | Password |
 |------|-------|------|----------|
 | Admin | admin@kfupm.edu.sa | **Admin** | `password` |
-| Eng. Omar Al-Harbi | oalharbi@kfupm.edu.sa | **Admin** | `password` |
 | Dr. Fatima Al-Otaibi | falotaibi@kfupm.edu.sa | Committee | `kfupm2026` |
 | Dr. Nasser Al-Mutairi | nmutairi@kfupm.edu.sa | Committee | `kfupm2026` |
 | Dr. Ahmed Al-Rashid | arashid@kfupm.edu.sa | Coordinator | `kfupm2026` |
