@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout.jsx';
 import { useCourses } from '../context/CoursesContext.jsx';
 import { departments } from '../lib/mock-admin-data.js';
 import { useAuth } from '../context/AuthContext.jsx';
-import { getRequiredExamTypes } from '../lib/mock-data.js';
 import {
   Users, Settings, Database, ClipboardList, BookOpen, Trash2, Plus, X,
 } from 'lucide-react';
@@ -25,7 +24,7 @@ const tabs = [
 
 /* ── System Settings (FR-SA3) ── */
 const SystemSettings = () => {
-  const { phases, updatePhases, addAuditLog, academicTerms: terms, setAcademicTerms: setTerms, activateTermCalendar, effectiveWeekStartDates } = useCourses();
+  const { phases, updatePhases, saveAllPhases, addAuditLog, academicTerms: terms, addAcademicTerm, activateTermCalendar, effectiveWeekStartDates } = useCourses();
   const { user } = useAuth();
   const [localPhases, setLocalPhases] = useState(phases.map(p => ({ ...p })));
 
@@ -36,26 +35,31 @@ const SystemSettings = () => {
   const [showAddTerm, setShowAddTerm] = useState(false);
 
   const statusLabel = (t) => {
+    const now = new Date();
+    const start = t.startDate ? new Date(t.startDate) : null;
+    const end = t.endDate ? new Date(t.endDate) : null;
+    if (start && end) {
+      if (now < start) return 'Upcoming';
+      if (now <= end) return 'Active';
+      return 'Past';
+    }
     if (t.status === 'upcoming') return 'Upcoming';
     return t.isActive ? 'Active' : 'Past';
   };
   const statusClass = (t) => {
-    if (t.status === 'upcoming') return 'badge-secondary';
-    return t.isActive ? 'badge-primary' : 'badge-outline';
+    const label = statusLabel(t);
+    if (label === 'Upcoming') return 'badge-secondary';
+    if (label === 'Active') return 'badge-primary';
+    return 'badge-outline';
   };
 
-  const handleAddTerm = (newTerm) => {
-    if (newTerm.isActive) {
-      setTerms(prev => [...prev.map(t => ({ ...t, isActive: false, status: t.status === 'active' ? 'past' : t.status })), newTerm]);
-      // Activate the term's calendar data across the system
-      if (newTerm.calendarData) {
-        activateTermCalendar(newTerm.calendarData);
-      }
-    } else {
-      setTerms(prev => [...prev, newTerm]);
+  const handleAddTerm = async (newTerm) => {
+    // Persist via the backend; context handles optimistic state + activation.
+    if (newTerm.isActive && newTerm.calendarData) {
+      activateTermCalendar(newTerm.calendarData);
     }
+    await addAcademicTerm(newTerm, user?.name || 'Admin');
     setShowAddTerm(false);
-    addAuditLog({ action: 'term_created', user: user?.name || 'Admin', details: `Created term ${newTerm.name} (${newTerm.status})` });
     toast.success('Academic term added successfully');
   };
 
@@ -99,7 +103,7 @@ const SystemSettings = () => {
               <input className="form-input" type="date" value={phase.endDate} onChange={e => { const u = [...localPhases]; u[idx] = { ...u[idx], endDate: e.target.value }; setLocalPhases(u); }} style={{ height: 32, fontSize: 13 }} />
             </div>
           ))}
-          <button className="btn btn-primary btn-sm mt-4" onClick={() => {
+          <button className="btn btn-primary btn-sm mt-4" onClick={async () => {
             localPhases.forEach((lp, idx) => {
               const old = phases[idx];
               if (!old) return;
@@ -109,8 +113,8 @@ const SystemSettings = () => {
                 addAuditLog({ action: 'phase_updated', user: user?.name || 'Admin', details: `${lp.name} dates updated` });
               }
             });
-            updatePhases(localPhases);
-            toast.success('Phase configuration saved');
+            const result = await saveAllPhases(localPhases.map(p => ({ ...p, updatedBy: user?.name || 'Admin', role: 'admin' })));
+            toast.success(result?.offline ? 'Phase configuration saved (local only — backend offline)' : 'Phase configuration saved');
           }}>Save Changes</button>
         </div>
       </div>
@@ -140,16 +144,22 @@ const AuditLogs = () => {
     booking_created: 'Booking Created',
     booking_rescheduled: 'Rescheduled',
     booking_deleted: 'Booking Deleted',
+    booking_conflict: 'Booking Conflict',
     phase_activated: 'Phase Activated',
     phase_deactivated: 'Phase Deactivated',
     phase_updated: 'Phase Updated',
     level1_configured: 'Level 1 Config',
-    user_role_changed: 'Role Changed',
+    level1_removed: 'Level 1 Removed',
+    user_role_changed: 'User Updated',
     user_deactivated: 'User Deactivated',
     user_activated: 'User Activated',
     user_deleted: 'User Deleted',
     user_created: 'User Created',
+    course_created: 'Course Created',
+    course_updated: 'Course Updated',
+    course_deleted: 'Course Deleted',
     term_created: 'Term Created',
+    term_activated: 'Term Activated',
   };
 
   return (
@@ -206,7 +216,7 @@ const ActionsDropdown = ({ isBooked, onDelete, onBook, onReschedule }) => {
 
 /* ── Booking Admin (FR-SA6) ── */
 const BookingAdmin = () => {
-  const { courses, cancelBooking, formatSlotDate } = useCourses();
+  const { courses, cancelBooking, formatSlotDate, refreshAuditLogs } = useCourses();
   const { user } = useAuth();
   const navigate = useNavigate();
   const [confirmDelete, setConfirmDelete] = useState(null);
@@ -214,23 +224,29 @@ const BookingAdmin = () => {
   const [levelFilter, setLevelFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!confirmDelete) return;
-    cancelBooking(confirmDelete.courseId, confirmDelete.examType, user?.name || 'Admin');
+    await cancelBooking(confirmDelete.courseId, confirmDelete.examType, user?.name || 'Admin', 'admin');
     toast.success(`${confirmDelete.examType} booking deleted by admin`);
     setConfirmDelete(null);
+    // Pull the canonical CANCEL_BOOKING entry the backend just wrote.
+    refreshAuditLogs();
   };
 
   const goToBooking = (courseId, examType) => {
-    navigate(`/booking/${courseId}?examType=${encodeURIComponent(examType)}&from=admin`);
+    const qs = new URLSearchParams();
+    qs.set('from', 'admin');
+    if (examType) qs.set('examType', examType);
+    navigate(`/booking/${courseId}?${qs.toString()}`);
   };
 
   const normalize = (s) => s.replace(/\s+/g, '').toLowerCase();
 
-  // Build flat rows then filter
-  const allRows = courses.flatMap(c => {
-    const types = getRequiredExamTypes(c);
-    return types.map(type => ({ course: c, type, booking: c.bookings[type] || null }));
+  // One booking per course (backend rule). Admin UI should show at most one row per course.
+  const allRows = courses.map((c) => {
+    const activeType = Object.keys(c.bookings || {})[0] || null;
+    const booking = activeType ? c.bookings[activeType] : null;
+    return { course: c, type: activeType, booking };
   });
 
   const filtered = allRows.filter(({ course: c, booking: b }) => {
@@ -283,10 +299,10 @@ const BookingAdmin = () => {
               )}
               {filtered.map(({ course: c, type, booking: b }) => {
                   return (
-                    <tr key={`${c.id}-${type}`}>
+                    <tr key={c.id}>
                       <td><strong>{c.code}</strong> <span className="text-xs text-muted">{c.name}</span></td>
                       <td><span className={`badge badge-level-${c.level}`}>L{c.level}</span></td>
-                      <td><span className="badge badge-outline" style={{ fontSize: 10 }}>{type}</span></td>
+                      <td><span className="badge badge-outline" style={{ fontSize: 10 }}>{type || '—'}</span></td>
                       <td>
                         <span className={`badge ${b ? 'badge-primary' : 'badge-outline'}`} style={{ fontSize: 10 }}>
                           {b ? 'Booked' : 'Not Booked'}
@@ -297,9 +313,9 @@ const BookingAdmin = () => {
                       <td>
                         <ActionsDropdown
                           courseId={c.id}
-                          examType={type}
+                          examType={type || 'Major 1'}
                           isBooked={!!b}
-                          onBook={() => goToBooking(c.id, type)}
+                          onBook={() => goToBooking(c.id, null)}
                           onReschedule={() => goToBooking(c.id, type)}
                           onDelete={() => setConfirmDelete({ courseId: c.id, examType: type, code: c.code })}
                         />
@@ -334,7 +350,24 @@ const BookingAdmin = () => {
 
 /* ── Main Admin Dashboard ── */
 const AdminDashboard = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState('users');
+
+  // Persist active tab in the URL (?tab=...) so refresh/back/forward keep state.
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (!tab) return;
+    const valid = tabs.some(t => t.id === tab);
+    if (valid && tab !== activeTab) setActiveTab(tab);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  const setTab = (tabId) => {
+    setActiveTab(tabId);
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', tabId);
+    setSearchParams(next, { replace: true });
+  };
 
   const renderTab = () => {
     switch (activeTab) {
@@ -362,7 +395,7 @@ const AdminDashboard = () => {
               <button
                 key={tab.id}
                 className={`tab-btn ${activeTab === tab.id ? 'tab-active' : ''}`}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => setTab(tab.id)}
               >
                 <Icon size={14} /> {tab.label}
               </button>

@@ -29,7 +29,4 @@ export const departments = [
   'Petroleum Engineering',
 ];
 
-export const academicTerms = [
-  { id: 't1', name: 'Term 232 (Spring 2026)', startDate: '2026-01-12', endDate: '2026-05-15', isActive: true },
-  { id: 't2', name: 'Term 231 (Fall 2025)', startDate: '2025-08-25', endDate: '2025-12-20', isActive: false },
-];
+export const academicTerms = [];
