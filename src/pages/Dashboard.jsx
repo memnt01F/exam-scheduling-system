@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext.jsx';
 import DashboardLayout from '../components/DashboardLayout.jsx';
 import { useCourses } from '../context/CoursesContext.jsx';
 import { getRequiredExamTypes, getCourseBookingStatus } from '../lib/mock-data.js';
@@ -25,8 +26,15 @@ function getTimeLeft(endDate) {
 const CourseRow = ({ course, isPhaseActive, isPhaseClosed, isPhaseUpcoming, onBook, formatSlotDate }) => {
   const [expanded, setExpanded] = useState(false);
   const status = getCourseBookingStatus(course);
-  const requiredTypes = getRequiredExamTypes(course);
   const bookedTypes = Object.keys(course.bookings || {});
+  const requiredTypes = getRequiredExamTypes(course);
+  // For Major mode, show whichever major is already scheduled first.
+  const orderedTypes = [...requiredTypes].sort((a, b) => {
+    const hasA = !!course.bookings?.[a];
+    const hasB = !!course.bookings?.[b];
+    if (hasA === hasB) return 0;
+    return hasA ? -1 : 1;
+  });
   const hasAnyBooking = bookedTypes.length > 0;
 
   const StatusIcon = status === 'fully_booked' ? CheckCircle2
@@ -59,7 +67,7 @@ const CourseRow = ({ course, isPhaseActive, isPhaseClosed, isPhaseUpcoming, onBo
           {/* Show booking slot indicators for required types */}
           {hasAnyBooking && (
             <div className="exam-slots-row">
-              {requiredTypes.map(type => {
+              {orderedTypes.map(type => {
                 const b = course.bookings[type];
                 return (
                   <div key={type} className="exam-slot-badge">
@@ -112,8 +120,16 @@ const CourseRow = ({ course, isPhaseActive, isPhaseClosed, isPhaseUpcoming, onBo
 
       {expanded && hasAnyBooking && (
         <div className="course-details">
-          {bookedTypes.map(type => {
-            const b = course.bookings[type];
+          {orderedTypes.map((type) => {
+            const b = course.bookings?.[type];
+            if (!b) {
+              return (
+                <div key={type} className="booking-detail-section">
+                  <h4 className="booking-detail-title">{type}</h4>
+                  <div className="text-sm text-muted">Not scheduled yet.</div>
+                </div>
+              );
+            }
             return (
               <div key={type} className="booking-detail-section">
                 <h4 className="booking-detail-title">{type}</h4>
@@ -152,12 +168,40 @@ const CourseRow = ({ course, isPhaseActive, isPhaseClosed, isPhaseUpcoming, onBo
 
 const Dashboard = () => {
   const navigate = useNavigate();
-  const { courses, phases, formatSlotDate } = useCourses();
+  const { courses, phases, formatSlotDate, refreshBookings } = useCourses();
+  const { user } = useAuth();
   const now = new Date();
+
+  // Sync bookings from backend on mount so all users see the latest state
+  useEffect(() => {
+    refreshBookings();
+  }, [refreshBookings]);
+
   const activePhase = phases.find((p) => p.isActive && new Date(p.startDate) <= now && new Date(p.endDate) >= now);
 
-  // Filter out Level 1 courses — those are committee-fixed and not self-bookable
-  const coordinatorCourses = courses.filter(c => c.level !== 1);
+  // Filter courses for the current coordinator.
+  // Show only non-level-1 courses and those assigned to the logged-in coordinator.
+  const isCoordinator = user?.role === 'coordinator';
+  // Build a set of canonical course codes that the user is assigned to.
+  // `user.assignedCourses` may contain course codes or client-side ids.
+  const assignedCourseValues = Array.isArray(user?.assignedCourses) ? user.assignedCourses : [];
+  const assignedCodes = new Set();
+  for (const val of assignedCourseValues) {
+    if (!val) continue;
+    const raw = String(val).trim();
+    // If this value matches a current course id/_serverId, map it to the course.code
+    const byId = courses.find(c => String(c.id) === raw || String(c._serverId || '') === raw || String(c._serverId || '') === String(raw));
+    if (byId && byId.code) { assignedCodes.add(String(byId.code).replace(/\s+/g, '').toUpperCase()); continue; }
+    // Otherwise treat the value as a code (normalize)
+    assignedCodes.add(String(raw).replace(/\s+/g, '').toUpperCase());
+  }
+
+  const coordinatorCourses = courses.filter((c) => {
+    if (c.level === 1) return false;
+    if (!isCoordinator) return true;
+    const codeNorm = String(c.code || '').replace(/\s+/g, '').toUpperCase();
+    return assignedCodes.has(codeNorm);
+  });
 
   const fullyBookedCount = coordinatorCourses.filter(c => getCourseBookingStatus(c) === 'fully_booked').length;
   const partialCount = coordinatorCourses.filter(c => getCourseBookingStatus(c) === 'partially_booked').length;
