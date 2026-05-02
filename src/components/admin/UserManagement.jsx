@@ -1,14 +1,14 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { departments } from '../../lib/mock-admin-data.js';
 import { useCourses } from '../../context/CoursesContext.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import {
-  Users, Search, Trash2, Plus, Upload, UserMinus, X, Check, Pencil, Eye,
+  Users, Search, Trash2, Plus, Upload, UserMinus, X, Check, Pencil,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
 const UserManagement = () => {
-  const { users, setUsers, addAuditLog } = useCourses();
+  const { users, setUsers, addUser, updateUser: updateUserApi, deleteUser: deleteUserApi, addAuditLog, refreshAuditLogs } = useCourses();
   const [search, setSearch] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
@@ -23,10 +23,10 @@ const UserManagement = () => {
     u.email.toLowerCase().includes(search.toLowerCase())
   );
 
-  const toggleActive = (id) => {
+  const toggleActive = async (id) => {
     const target = users.find(u => u.id === id);
     const newActive = !target?.isActive;
-    setUsers(prev => prev.map(u => u.id === id ? { ...u, isActive: newActive } : u));
+    await updateUserApi(id, { isActive: newActive }, adminName);
     addAuditLog({
       action: newActive ? 'user_activated' : 'user_deactivated',
       user: adminName,
@@ -35,9 +35,9 @@ const UserManagement = () => {
     toast.success('User status updated');
   };
 
-  const deleteUser = (id) => {
+  const deleteUser = async (id) => {
     const target = users.find(u => u.id === id);
-    setUsers(prev => prev.filter(u => u.id !== id));
+    await deleteUserApi(id, adminName);
     setConfirmDelete(null);
     setEditingUser(null);
     addAuditLog({
@@ -48,9 +48,16 @@ const UserManagement = () => {
     toast.success('User deleted successfully');
   };
 
-  const updateUser = (updated) => {
+  const updateUser = async (updated) => {
     const old = users.find(u => u.id === updated.id);
-    setUsers(prev => prev.map(u => u.id === updated.id ? updated : u));
+    await updateUserApi(updated.id, {
+      name: updated.name,
+      email: updated.email,
+      role: updated.role,
+      department: updated.department,
+      assignedCourses: updated.assignedCourses,
+      isActive: updated.isActive,
+    }, adminName);
     setEditingUser(null);
     if (old && old.role !== updated.role) {
       addAuditLog({
@@ -62,17 +69,29 @@ const UserManagement = () => {
     toast.success('User updated successfully');
   };
 
-  const unassignAllCoordinators = () => {
-    setUsers(prev => prev.filter(u => u.role !== 'coordinator'));
+  const unassignAllCoordinators = async () => {
+    const coords = users.filter(u => u.role === 'coordinator');
+    // Clear assignedCourses on each coordinator (do NOT delete the user).
+    for (const c of coords) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateUserApi(c.id, { assignedCourses: [] }, adminName);
+    }
+    addAuditLog({
+      action: 'user_role_changed',
+      user: adminName,
+      details: `Unassigned all courses from ${coords.length} coordinator(s)`,
+      role: 'admin',
+    });
     setConfirmUnassign(false);
-    toast.success('All coordinators have been unassigned.');
+    refreshAuditLogs?.();
+    toast.success('All coordinators have been unassigned from their courses.');
   };
 
   const handleImport = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       try {
         const text = evt.target.result;
         const lines = text.split('\n').filter(l => l.trim());
@@ -91,7 +110,6 @@ const UserManagement = () => {
           const role = cols[roleIdx]?.toLowerCase() || 'coordinator';
           const validRole = ['coordinator', 'committee', 'admin'].includes(role) ? role : 'coordinator';
           newUsers.push({
-            id: `imported-${Date.now()}-${i}`,
             name: cols[nameIdx],
             email: cols[emailIdx],
             role: validRole,
@@ -101,7 +119,11 @@ const UserManagement = () => {
           });
         }
         if (newUsers.length === 0) { toast.error('No valid users found in file'); return; }
-        setUsers(prev => [...prev, ...newUsers]);
+        // Persist each row through the backend (falls back to local on offline).
+        for (const u of newUsers) {
+          // eslint-disable-next-line no-await-in-loop
+          await addUser(u, adminName);
+        }
         toast.success(`${newUsers.length} user(s) imported successfully`);
       } catch { toast.error('Failed to parse file'); }
     };
@@ -163,6 +185,7 @@ const UserManagement = () => {
                       <button className="btn btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); setEditingUser({ ...u }); }} title="Edit user">
                         <Pencil size={14} />
                       </button>
+                      
                       <button className="btn btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); setConfirmDelete(u.id); }} title="Delete user">
                         <Trash2 size={14} color="var(--clr-danger)" />
                       </button>
@@ -182,7 +205,7 @@ const UserManagement = () => {
       <input ref={fileInputRef} type="file" accept=".csv,.xlsx" style={{ display: 'none' }} onChange={handleImport} />
 
       {/* Add User Modal */}
-      {showAddModal && <AddUserModal departments={departments} onClose={() => setShowAddModal(false)} onSave={(u) => { setUsers(prev => [...prev, u]); setShowAddModal(false); addAuditLog({ action: 'user_created', user: adminName, details: `Created user ${u.name} (${u.role})` }); toast.success('User added successfully'); }} onImport={() => { setShowAddModal(false); fileInputRef.current?.click(); }} />}
+      {showAddModal && <AddUserModal departments={departments} onClose={() => setShowAddModal(false)} onSave={async (u) => { await addUser(u, adminName); setShowAddModal(false); addAuditLog({ action: 'user_created', user: adminName, details: `Created user ${u.name} (${u.role})` }); toast.success('User added successfully'); }} onImport={() => { setShowAddModal(false); fileInputRef.current?.click(); }} />}
 
       {/* Edit User Modal */}
       {editingUser && (
@@ -220,9 +243,18 @@ const UserManagement = () => {
 const EditUserModal = ({ user, departments, onClose, onSave, onDelete }) => {
   const { courses } = useCourses();
   const [form, setForm] = useState({ ...user });
-  const [assignedCourseIds, setAssignedCourseIds] = useState(user.assignedCourses || []);
+  const [assignedCourseIds, setAssignedCourseIds] = useState([]);
   const [courseSearch, setCourseSearch] = useState('');
   const set = (key, val) => setForm(prev => ({ ...prev, [key]: val }));
+
+  useEffect(() => {
+    const mapped = (user.assignedCourses || []).map((val) => {
+      const raw = String(val || '').trim();
+      const course = courses.find(c => String(c.id) === raw || String(c._serverId || '') === raw || String(c.code || '').replace(/\s+/g, '').toUpperCase() === raw.replace(/\s+/g, '').toUpperCase());
+      return course ? course.id : null;
+    }).filter(Boolean);
+    setAssignedCourseIds([...new Set(mapped)]);
+  }, [user.assignedCourses, courses]);
 
   const toggleCourse = (id) => {
     setAssignedCourseIds(prev => prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]);
