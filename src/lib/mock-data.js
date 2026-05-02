@@ -1,8 +1,8 @@
 export const currentUser = {
-    id: 'u1',
-    name: 'Dr. Khadijah AlSafwan',
-    email: 'khadijah.safwan@kfupm.edu.sa',
-    role: 'coordinator',
+  id: 'u1',
+  name: 'Dr. Ahmed Al-Rashid',
+  email: 'arashid@kfupm.edu.sa',
+  role: 'coordinator',
 };
 
 // Term 252 academic calendar week start dates (Sunday-based)
@@ -108,17 +108,7 @@ export const blockedDates = {
 /**
  * Map of date strings to arrays of booked course codes.
  */
-export const bookedDateMap = {
-  '2026-02-03': ['ICS 108'],
-  '2026-02-08': ['MATH101'],
-  '2026-02-09': ['PHYS101'],
-  '2026-02-10': ['CHEM101'],
-  '2026-02-16': ['STAT201'],
-  '2026-02-18': ['MATH208'],
-  '2026-02-23': ['ICS 253'],
-  '2026-03-08': ['BUS200'],
-  '2026-03-31': ['MATH102'],
-};
+export const bookedDateMap = {};
 
 export const phases = [
   {
@@ -167,10 +157,7 @@ export const coordinatorCourses = [
     name: 'Introduction to Computing',
     level: 1,
     department: 'Information & Computer Science',
-    bookings: {
-      'Major 1': { week: 4, day: 3, maleProctors: 2, femaleProctors: 1, bookedAt: '2026-01-20T09:00:00Z' },
-      'Major 2': { week: 8, day: 4, maleProctors: 2, femaleProctors: 1, bookedAt: '2026-01-22T09:00:00Z' },
-    },
+    bookings: {},
   },
   {
     id: 'c1',
@@ -178,9 +165,7 @@ export const coordinatorCourses = [
     name: 'Discrete Structures',
     level: 2,
     department: 'Information & Computer Science',
-    bookings: {
-      'Major 1': { week: 7, day: 2, maleProctors: 3, femaleProctors: 2, bookedAt: '2026-03-01T10:30:00Z' },
-    },
+    bookings: {},
   },
   {
     id: 'c2',
@@ -215,24 +200,30 @@ export const coordinatorCourses = [
  * If nothing booked → returns all types (coordinator will choose).
  */
 export function getRequiredExamTypes(course) {
-  const booked = Object.keys(course.bookings || {});
-  if (booked.length === 0) return EXAM_TYPES; // all options shown
-  if (booked.includes('Mid')) return ['Mid'];
-  return ['Major 1', 'Major 2'];
+  const bookings = course?.bookings || {};
+  const hasMid = !!bookings.Mid;
+  const hasMajor1 = !!bookings['Major 1'];
+  const hasMajor2 = !!bookings['Major 2'];
+
+  if (hasMid) return ['Mid'];
+  if (hasMajor1 || hasMajor2) return ['Major 1', 'Major 2'];
+  return EXAM_TYPES; // nothing booked yet: user chooses mode
 }
 
 /**
  * Determine overall booking status.
- * 'fully_booked' = all required exam types are booked.
- * 'partially_booked' = some but not all required types booked (e.g. Major 1 without Major 2).
+ * Since a course can have only one exam type, 'fully_booked' if any booking exists.
  * 'not_booked' = nothing booked.
  */
 export function getCourseBookingStatus(course) {
-  const booked = Object.keys(course.bookings || {});
-  if (booked.length === 0) return 'not_booked';
-  const required = getRequiredExamTypes(course);
-  const bookedCount = required.filter(t => course.bookings[t]).length;
-  if (bookedCount >= required.length) return 'fully_booked';
+  const bookings = course?.bookings || {};
+  const hasMid = !!bookings.Mid;
+  const hasMajor1 = !!bookings['Major 1'];
+  const hasMajor2 = !!bookings['Major 2'];
+
+  if (!hasMid && !hasMajor1 && !hasMajor2) return 'not_booked';
+  if (hasMid) return 'fully_booked';
+  if (hasMajor1 && hasMajor2) return 'fully_booked';
   return 'partially_booked';
 }
 
