@@ -188,7 +188,7 @@ export async function updatePhase(id, payload) {
 export async function isBackendReachable() {
   try {
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 1500);
+    const t = setTimeout(() => ctrl.abort(), 1000);
     const res = await fetch(`${API_BASE}/bookings`, { signal: ctrl.signal });
     clearTimeout(t);
     return res.ok || res.status === 404; // route exists / server up
