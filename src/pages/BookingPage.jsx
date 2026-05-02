@@ -3,8 +3,9 @@ import { useParams, useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout.jsx';
 import ExamCalendar from '../components/ExamCalendar.jsx';
 import { useCourses } from '../context/CoursesContext.jsx';
-import { checkConflicts, getRequiredExamTypes } from '../lib/mock-data.js';
-import { ANCHOR_EXAM_TYPES } from '../lib/anchor-courses.js';
+import { getRequiredExamTypes, EXAM_TYPES } from '../lib/mock-data.js';
+import { checkBookingConflict } from '../services/api.js';
+
 import { ArrowLeft, Check, X, AlertTriangle, Users, CheckCircle2, Lock } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { toast } from 'sonner';
@@ -19,7 +20,7 @@ function toDateStr(d) {
 const BookingPage = () => {
   const { courseId } = useParams();
   const navigate = useNavigate();
-  const { courses, examSlots, bookCourse, getSlotDate, isAnchored, addAnchorSlot, formatSlotDate } = useCourses();
+  const { courses, examSlots, bookCourse, rescheduleBooking, cancelBooking, getSlotDate, isAnchored, addAnchorSlot, formatSlotDate } = useCourses();
   const { user } = useAuth();
 
   // Support query params for admin/committee flow
@@ -29,14 +30,32 @@ const BookingPage = () => {
   const requestedExamType = searchParams.get('examType');
 
   const course = courses.find((c) => c.id === courseId);
-  const availableTypes = fromCommittee ? ANCHOR_EXAM_TYPES : (course ? getRequiredExamTypes(course) : []);
+  const hasAnyBooking = !!(course && Object.keys(course.bookings || {}).length);
 
-  // Default to requested exam type (from admin) or first unbooked
+  const isMajorType = (t) => t === 'Major 1' || t === 'Major 2';
+  const modeOf = (t) => (t === 'Mid' ? 'mid' : isMajorType(t) ? 'major' : null);
+  const existingTypes = course ? Object.keys(course.bookings || {}) : [];
+  const hasMidBooked = existingTypes.some((t) => modeOf(t) === 'mid');
+  const hasAnyMajorBooked = existingTypes.some((t) => modeOf(t) === 'major');
+
+  // Show all exam types whenever:
+  //  - committee anchor flow,
+  //  - rescheduling (course already has a booking — coordinator may switch type),
+  //  - admin override.
+  // Otherwise restrict to whatever pairing rules dictate (Major1+Major2 vs Mid).
+  const availableTypes = (fromCommittee || hasAnyBooking || fromAdmin)
+    ? EXAM_TYPES
+    : (course ? getRequiredExamTypes(course) : []);
+
+  // Prefer a stable "current booking type" for display only. Logic below uses mode checks instead.
+  const currentBookingType = existingTypes[0];
   const defaultExamType = (requestedExamType && availableTypes.includes(requestedExamType))
     ? requestedExamType
-    : availableTypes.find(t => !course?.bookings[t]) || availableTypes[0] || '';
+    : currentBookingType || availableTypes.find(t => !course?.bookings[t]) || availableTypes[0] || '';
 
   const [examType, setExamType] = useState(defaultExamType);
+  // Track initial type mainly for conflict-check exclusion id.
+  const [originalExamType] = useState(requestedExamType || currentBookingType || defaultExamType);
 
   const existingBooking = course?.bookings[examType];
 
@@ -56,7 +75,10 @@ const BookingPage = () => {
   const [maleProctors, setMaleProctors] = useState(existingBooking?.maleProctors?.toString() || '');
   const [femaleProctors, setFemaleProctors] = useState(existingBooking?.femaleProctors?.toString() || '');
   const [showConfirm, setShowConfirm] = useState(false);
+  const [showTypeSwitchConfirm, setShowTypeSwitchConfirm] = useState(false);
+  const [pendingExamType, setPendingExamType] = useState(null);
   const [conflictMessage, setConflictMessage] = useState(null);
+  const [checkingConflict, setCheckingConflict] = useState(false);
 
   if (!course) {
     return (
@@ -71,9 +93,11 @@ const BookingPage = () => {
     );
   }
 
-  const isReschedule = !!existingBooking;
+  // If the course already has a booking, this page is effectively a reschedule/replace flow
+  // even when switching the exam type (backend keeps one booking per course).
+  const isReschedule = hasAnyBooking;
 
-  const handleExamTypeChange = (type) => {
+  const applyExamType = (type) => {
     setExamType(type);
     const booking = course.bookings[type];
     if (booking) {
@@ -91,16 +115,49 @@ const BookingPage = () => {
     setConflictMessage(null);
   };
 
-  const handleSelectDate = (dateStr, weekDay) => {
-    if (!weekDay) return;
-    const result = checkConflicts(weekDay.week, weekDay.day, course.code);
-    if (result.hasConflict) {
-      setConflictMessage(result.message);
+  const handleExamTypeChange = (type) => {
+    if (!type || type === examType) return;
+
+    // Only confirm when switching between Mid-mode and Major-mode.
+    // Do NOT confirm when moving between Major 1 and Major 2.
+    const nextMode = modeOf(type);
+    const switchingModes = (nextMode === 'mid' && hasAnyMajorBooked) || (nextMode === 'major' && hasMidBooked);
+    if (hasAnyBooking && switchingModes) {
+      setPendingExamType(type);
+      setShowTypeSwitchConfirm(true);
       return;
     }
+
+    applyExamType(type);
+  };
+
+  const handleSelectDate = async (dateStr, weekDay) => {
+    if (!weekDay) return;
     setSelectedDate(dateStr);
     setSelectedWeekDay(weekDay);
     setConflictMessage(null);
+
+    // Live conflict check against backend (FR-CC3) — runs the moment a slot is picked.
+    if (!course?.code || !dateStr) return;
+    const originalBooking = course.bookings[originalExamType];
+    const excludeBookingId = originalBooking?._serverId || undefined;
+    setCheckingConflict(true);
+    try {
+      const result = await checkBookingConflict({
+        courseCode: course.code,
+        examDate: dateStr,
+        excludeBookingId,
+      });
+      if (result?.hasConflict) {
+        setConflictMessage(
+          'Booking Blocked — Student conflict detected. This date already has an exam for shared students.'
+        );
+      }
+    } catch {
+      // Backend unreachable — silently skip; final POST/PUT will catch any conflict.
+    } finally {
+      setCheckingConflict(false);
+    }
   };
 
   const handleSubmit = () => {
@@ -127,13 +184,13 @@ const BookingPage = () => {
       })
     : null;
 
-  const handleConfirmBooking = () => {
+  const handleConfirmBooking = async () => {
     setShowConfirm(false);
 
     if (fromCommittee) {
-      // Committee flow: save as anchor slot AND update main booking state
+      // Committee flow: save as anchor slot AND create/update the booking.
       const dateLabel = formatSlotDate(selectedWeekDay.week, selectedWeekDay.day);
-      addAnchorSlot({
+      await addAnchorSlot({
         courseCode: course.code,
         courseName: course.name,
         examType,
@@ -141,33 +198,78 @@ const BookingPage = () => {
         date: dateLabel,
         createdBy: user?.name || 'Committee',
       });
-      // Also create a regular booking so it appears in Booking Overview, Proctor Summary, etc.
-      bookCourse({
-        courseId: course.id,
-        examType,
-        week: selectedWeekDay.week,
-        day: selectedWeekDay.day,
-        maleProctors: parseInt(maleProctors),
-        femaleProctors: parseInt(femaleProctors),
-        userName: user?.name || 'Committee',
-      });
+
+      // If a booking already exists for this course+examType, reschedule it (PUT).
+      // Otherwise create a new one (POST). This prevents duplicate key errors.
+      const existingForType = course.bookings[examType];
+      const result = existingForType
+        ? await rescheduleBooking({
+            courseId: course.id,
+            oldExamType: examType,
+            newExamType: examType,
+            week: selectedWeekDay.week,
+            day: selectedWeekDay.day,
+            maleProctors: parseInt(maleProctors),
+            femaleProctors: parseInt(femaleProctors),
+            userName: user?.name || 'Committee',
+            role: 'committee',
+          })
+        : await bookCourse({
+            courseId: course.id,
+            examType,
+            week: selectedWeekDay.week,
+            day: selectedWeekDay.day,
+            maleProctors: parseInt(maleProctors),
+            femaleProctors: parseInt(femaleProctors),
+            userName: user?.name || 'Committee',
+            forceSwitch: false,
+          });
+
+      if (!result?.success) return;
       toast.success(
         `${examType} exam anchored for ${course.code} on ${selectedDateFormatted}`,
         { description: 'Committee-fixed slot saved.' }
       );
       setTimeout(() => navigate('/committee'), 1500);
     } else {
-      bookCourse({
-        courseId: course.id,
-        examType,
-        week: selectedWeekDay.week,
-        day: selectedWeekDay.day,
-        maleProctors: parseInt(maleProctors),
-        femaleProctors: parseInt(femaleProctors),
-        userName: user?.name || 'Unknown',
-      });
+      const selectedMode = modeOf(examType);
+      const switchingModes = (selectedMode === 'mid' && hasAnyMajorBooked) || (selectedMode === 'major' && hasMidBooked);
+
+      // If switching modes, cancel existing bookings in the other mode first.
+      // This keeps Major 1 + Major 2 independent, while enforcing Mid ↔ Major exclusivity.
+      if (switchingModes) {
+        const toCancel = existingTypes.filter((t) => modeOf(t) !== selectedMode);
+        for (const t of toCancel) {
+          // Best-effort; if backend is offline we still update local state.
+          await cancelBooking(course.id, t, user?.name || 'Unknown', fromAdmin ? 'admin' : 'coordinator');
+        }
+      }
+
+      const existingForType = course.bookings[examType];
+      const result = existingForType
+        ? await rescheduleBooking({
+            courseId: course.id,
+            oldExamType: examType,
+            newExamType: examType,
+            week: selectedWeekDay.week,
+            day: selectedWeekDay.day,
+            maleProctors: parseInt(maleProctors),
+            femaleProctors: parseInt(femaleProctors),
+            userName: user?.name || 'Unknown',
+            role: fromAdmin ? 'admin' : 'coordinator',
+          })
+        : await bookCourse({
+            courseId: course.id,
+            examType,
+            week: selectedWeekDay.week,
+            day: selectedWeekDay.day,
+            maleProctors: parseInt(maleProctors),
+            femaleProctors: parseInt(femaleProctors),
+            userName: user?.name || 'Unknown',
+          });
+      if (!result?.success) return; // 409/400/500 — stay on page, toast shown
       toast.success(
-        `${examType} exam booked for ${course.code} on ${selectedDateFormatted}`,
+        `${examType} exam ${existingForType ? 'rescheduled' : 'booked'} for ${course.code} on ${selectedDateFormatted}`,
         { description: 'Confirmation email sent to your KFUPM email.' }
       );
       const backPath = fromAdmin ? '/admin' : '/dashboard';
@@ -224,19 +326,18 @@ const BookingPage = () => {
               <div className="card-content">
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   {availableTypes.map((type) => {
-                    const alreadyBooked = !!course.bookings[type];
-                    const anchored = !fromCommittee && isAnchored(course.code, type);
+                    const anchored = isAnchored(course.code, type);
+                    const disabled = anchored && !fromCommittee;
                     return (
                       <button
                         key={type}
                         className={`btn btn-sm ${examType === type ? 'btn-primary' : 'btn-outline'}`}
                         onClick={() => handleExamTypeChange(type)}
                         type="button"
-                        disabled={anchored}
-                        title={anchored ? 'Committee-fixed anchor slot' : ''}
+                        disabled={disabled}
+                        title={disabled ? 'Committee-fixed anchor slot' : ''}
                       >
-                        {alreadyBooked && <CheckCircle2 size={12} style={{ marginRight: 4 }} />}
-                        {anchored && <Lock size={12} style={{ marginRight: 4 }} />}
+                        {disabled && <Lock size={12} style={{ marginRight: 4 }} />}
                         {type}
                       </button>
                     );
@@ -323,10 +424,11 @@ const BookingPage = () => {
                 </div>
                 <button
                   className="btn btn-primary btn-block mt-4"
-                  disabled={!selectedWeekDay || !examType || !maleProctors || !femaleProctors}
+                  disabled={!selectedWeekDay || !examType || !maleProctors || !femaleProctors || !!conflictMessage || checkingConflict}
                   onClick={handleSubmit}
+                  title={conflictMessage ? 'Resolve the student conflict by selecting a different date.' : ''}
                 >
-                  Confirm Booking
+                  {checkingConflict ? 'Checking conflicts…' : 'Confirm Booking'}
                 </button>
               </div>
             </div>
@@ -352,6 +454,41 @@ const BookingPage = () => {
               <button className="btn btn-outline" onClick={() => setShowConfirm(false)}>Cancel</button>
               <button className="btn btn-primary" onClick={handleConfirmBooking}>
                 <Check size={16} /> Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showTypeSwitchConfirm && (
+        <div className="modal-overlay" onClick={() => { setShowTypeSwitchConfirm(false); setPendingExamType(null); }}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h2 className="modal-title">Change Exam Type?</h2>
+            <p className="modal-desc">
+              Changing the exam type will remove the previously scheduled exam. Continue?
+            </p>
+            <div style={{ background: 'var(--clr-muted-bg)', borderRadius: 'var(--radius)', padding: 16 }} className="space-y-2 text-sm">
+              <p><span className="text-muted">Course:</span>{' '}<strong>{course.code} — {course.name}</strong></p>
+              <p><span className="text-muted">Current:</span>{' '}<strong>{currentBookingType || '—'}</strong></p>
+              <p><span className="text-muted">New:</span>{' '}<strong>{pendingExamType || '—'}</strong></p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-outline" onClick={() => { setShowTypeSwitchConfirm(false); setPendingExamType(null); }}>
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={() => {
+                  const next = pendingExamType;
+                  setShowTypeSwitchConfirm(false);
+                  setPendingExamType(null);
+                  if (next) {
+                    applyExamType(next);
+                    toast.info('Exam type changed. Confirm booking to replace the previous schedule.');
+                  }
+                }}
+              >
+                <CheckCircle2 size={16} /> Continue
               </button>
             </div>
           </div>
