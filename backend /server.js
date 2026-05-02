@@ -12,7 +12,12 @@ const academicTermRoutes = require("./routes/academicTerm.routes");
 const anchorSlotRoutes = require("./routes/anchorSlot.routes");
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: [
+    "http://localhost:8080",
+    "https://kfupm-exam-scheduling-42ia.onrender.com"
+  ]
+}));
 app.use(express.json());
 
 app.get("/", (_req, res) => res.send("Exam Scheduling Backend is running"));
