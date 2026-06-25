@@ -15,6 +15,7 @@ A full-stack web application for managing and scheduling exams at KFUPM. Built w
 - [Getting Started](#getting-started)
   - [Prerequisites](#prerequisites)
   - [Backend Setup](#backend-setup)
+  - [Environment Variables](#environment-variables)
   - [Frontend Setup](#frontend-setup)
 - [Test Accounts](#test-accounts)
 - [Testing Guide for Graders](#testing-guide-for-graders)
@@ -62,7 +63,7 @@ ExamEase allows department coordinators to book exam slots for their courses, wh
 
 - **Node.js** v18 or higher
 - **npm** v9 or higher
-
+- A **MongoDB Atlas** account and cluster ([free tier](https://www.mongodb.com/cloud/atlas/register) is sufficient)
 
 ---
 
@@ -75,11 +76,48 @@ cd backend
 # 2. Install dependencies
 npm install
 
-# 3. Start the development server
+# 3. Configure environment variables (see below)
+
+# 4. Start the development server
 npm run dev
 ```
 
 The backend will start on **http://localhost:5001** by default.
+
+---
+
+### Environment Variables
+
+The backend requires a `.env` file inside the `backend/` folder. A template is provided at `backend/.env.example`.
+
+**Step 1 — Copy the example file:**
+
+```bash
+# From the backend/ directory
+cp .env.example .env
+```
+
+**Step 2 — Fill in your values:**
+
+Open `backend/.env` and replace the placeholders with your actual credentials:
+
+```env
+MONGO_URL=mongodb+srv://<username>:<password>@<cluster>.mongodb.net/<dbname>?retryWrites=true&w=majority
+PORT=5001
+```
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `MONGO_URL` | Yes | MongoDB Atlas connection string. Found in your Atlas cluster under **Connect → Drivers**. |
+| `PORT` | No | Port the Express server listens on. Defaults to `5001` if not set. |
+
+> **Never commit your `.env` file.** It is already listed in `backend/.gitignore`.
+
+**How to get your `MONGO_URL`:**
+1. Log in to [MongoDB Atlas](https://cloud.mongodb.com)
+2. Select your cluster → click **Connect**
+3. Choose **Drivers**, select **Node.js**
+4. Copy the connection string and replace `<password>` with your database user's password
 
 To verify it's running, visit:
 ```
@@ -597,7 +635,8 @@ exam-scheduling-system/
 │   │   └── seedEnrollments.js       # Database seeding script
 │   ├── services/
 │   │   └── conflictService.js       # Student conflict detection logic
-│   ├── .env                         # Environment variables (NOT committed to GitHub)
+│   ├── .env                         # Environment variables (NOT committed — create from .env.example)
+│   ├── .env.example                 # Template with placeholder values (safe to commit)
 │   ├── .gitignore
 │   ├── package.json
 │   └── server.js                    # Express entry point
