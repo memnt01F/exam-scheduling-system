@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "nodemon server.js",
     "start": "node server.js",
-    "seed": "node scripts/seedEnrollments.js"
+    "seed": "node scripts/seed.js",
+    "seed:enrollments": "node scripts/seedEnrollments.js",
+    "seed:users": "node scripts/seedUsers.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

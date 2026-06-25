@@ -14,19 +14,17 @@ function pick(row, keys) {
   return undefined;
 }
 
-async function main() {
+async function run() {
   if (!fs.existsSync(FILE_PATH)) {
-    console.error(`[seed] File not found: ${FILE_PATH}`);
-    console.error("       Place MidTermExamsRandomizedData.xlsx in backend/data/");
-    process.exit(1);
+    console.warn("[seed:enrollments] Excel file not found — skipping enrollment seed.");
+    console.warn("                   Place MidTermExamsRandomizedData.xlsx in backend/data/ to seed enrollments.");
+    return;
   }
-
-  await connectDB(process.env.MONGO_URL);
 
   const wb = XLSX.readFile(FILE_PATH);
   const sheetName = wb.SheetNames[0];
   const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: null });
-  console.log(`[seed] Read ${rows.length} rows from ${sheetName}`);
+  console.log(`[seed:enrollments] Read ${rows.length} rows from ${sheetName}`);
 
   const docs = [];
   for (const row of rows) {
@@ -53,11 +51,10 @@ async function main() {
     });
   }
 
-
-  console.log(`[seed] Parsed ${docs.length} valid enrollment rows`);
+  console.log(`[seed:enrollments] Parsed ${docs.length} valid enrollment rows`);
 
   await Enrollment.deleteMany({});
-  console.log("[seed] Cleared existing Enrollment collection");
+  console.log("[seed:enrollments] Cleared existing Enrollment collection");
 
   const BATCH = 5000;
   let inserted = 0;
@@ -65,14 +62,21 @@ async function main() {
     const chunk = docs.slice(i, i + BATCH);
     await Enrollment.insertMany(chunk, { ordered: false });
     inserted += chunk.length;
-    console.log(`[seed] Inserted ${inserted}/${docs.length}`);
+    console.log(`[seed:enrollments] Inserted ${inserted}/${docs.length}`);
   }
 
-  console.log(`Seeded ${inserted} enrollment records`);
-  process.exit(0);
+  console.log(`[seed:enrollments] Done — seeded ${inserted} enrollment records`);
 }
 
-main().catch((err) => {
-  console.error("[seed] Failed:", err);
-  process.exit(1);
-});
+// Allow running standalone: node scripts/seedEnrollments.js
+if (require.main === module) {
+  connectDB(process.env.MONGO_URL)
+    .then(run)
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error("[seed:enrollments] Failed:", err);
+      process.exit(1);
+    });
+}
+
+module.exports = { run };

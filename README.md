@@ -18,6 +18,7 @@ A full-stack web application for managing and scheduling exams at KFUPM. Built w
   - [Environment Variables](#environment-variables)
   - [Frontend Setup](#frontend-setup)
 - [Test Accounts](#test-accounts)
+- [Development Seed Accounts](#development-seed-accounts)
 - [Testing Guide for Graders](#testing-guide-for-graders)
   - [How to Test Conflict Detection](#how-to-test-conflict-detection)
   - [Conflict Test Cases](#conflict-test-cases)
@@ -127,11 +128,13 @@ You should see: `Exam Scheduling Backend is running`
 
 **Available backend scripts:**
 
-| Script        | Command        | Description                               |
-|---------------|----------------|-------------------------------------------|
-| Development   | `npm run dev`  | Starts server with nodemon (auto-restart) |
-| Production    | `npm start`    | Starts server with node                   |
-| Seed database | `npm run seed` | Seeds enrollment data from Excel file     |
+| Script           | Command                    | Description                                        |
+|------------------|----------------------------|----------------------------------------------------|
+| Development      | `npm run dev`              | Starts server with nodemon (auto-restart)          |
+| Production       | `npm start`                | Starts server with node                            |
+| Seed all         | `npm run seed`             | Seeds enrollment data **and** default dev accounts |
+| Seed enrollments | `npm run seed:enrollments` | Seeds enrollment data from Excel file only         |
+| Seed dev users   | `npm run seed:users`       | Creates all default accounts (see Test Accounts)   |
 
 ---
 
@@ -151,6 +154,30 @@ npm run dev
 The frontend will start on **http://localhost:8080** by default.
 
 > **Important:** Make sure the backend server is running before starting the frontend, as the app fetches live data on load.
+
+---
+
+## Development Seed Accounts
+
+When running the project locally, seed the database with the single combined command:
+
+```bash
+# From the backend/ directory
+npm run seed
+```
+
+This seeds both enrollment data (from the Excel file) **and** all default accounts in one step. If the Excel file is not present, the enrollment step is skipped with a warning and user seeding continues. The script is **idempotent** — running it multiple times is safe. It skips any account that already exists.
+
+You can also run each seeder independently if needed:
+
+```bash
+npm run seed:enrollments   # enrollment data only
+npm run seed:users         # user accounts only
+```
+
+The seeded accounts are exactly the ones listed in the [Test Accounts](#test-accounts) table below.
+
+> **Note for coordinators:** Seeded coordinator accounts have no courses assigned by default. After seeding, log in as admin, go to **User Management**, and assign courses to each coordinator so they can see and book their courses on the dashboard.
 
 ---
 
