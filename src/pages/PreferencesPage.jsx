@@ -64,7 +64,7 @@ const WeekPicker = ({ selected, onChange, totalWeeks, disabled }) => {
   };
 
   return (
-    <div ref={containerRef} style={{ position: 'relative', display: 'inline-block' }}>
+    <div ref={containerRef} style={{ position: 'relative', width: '100%' }}>
       {/* Trigger */}
       <button
         type="button"
@@ -76,7 +76,7 @@ const WeekPicker = ({ selected, onChange, totalWeeks, disabled }) => {
           border: '1px solid var(--clr-border)',
           background: disabled ? 'var(--clr-muted-bg, #f1f5f9)' : '#fff',
           cursor: disabled ? 'default' : 'pointer',
-          fontSize: 13, minWidth: 80, minHeight: 32,
+          fontSize: 12, width: '100%', minHeight: 30,
         }}
       >
         {selected.length === 0 ? (
@@ -153,7 +153,7 @@ const DayToggleGroup = ({ selected, onChange, disabledDays, disabled }) => (
             onChange(isSelected ? selected.filter(d => d !== day) : [...selected, day]);
           }}
           style={{
-            padding: '4px 2px', borderRadius: 6, fontSize: 12,
+            padding: '3px 0', borderRadius: 6, fontSize: 11,
             border: '1px solid var(--clr-border)',
             background: isSelected ? '#1a1a1a' : isDisabled ? 'var(--clr-muted-bg, #f1f5f9)' : '#fff',
             color: isSelected ? '#fff' : isDisabled ? 'var(--clr-muted)' : '#334155',
@@ -176,7 +176,7 @@ const PreferencesPage = () => {
   const { user } = useAuth();
   const { courses, phases, effectiveWeekStartDates, backendOnline } = useCourses();
 
-  const totalWeeks = effectiveWeekStartDates.length;
+  const totalWeeks = Math.min(effectiveWeekStartDates.length, 15);
   const normalizedCode = String(courseCode || '').replace(/\s+/g, '').toUpperCase();
 
   // Resolve course and its phase
@@ -404,173 +404,182 @@ const PreferencesPage = () => {
         {/* Preferences table */}
         {!pageLoading && course && (
           <div className="card">
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                <thead>
-                  <tr style={{ borderBottom: '2px solid var(--clr-border)', background: '#f8f9fb' }}>
-                    {[
-                      'Course',
-                      'Exam Type',
-                      'Major 1 - Preferred Week',
-                      'Major 2 - Preferred Week',
-                      'Midterm - Preferred Week',
-                      'Preferred',
-                      'Unpreferred',
-                      'Comments',
-                      'Status',
-                    ].map(h => (
-                      <th
-                        key={h}
-                        style={{
-                          padding: '10px 12px', textAlign: 'left',
-                          fontWeight: 600, fontSize: 12,
-                          color: 'var(--clr-muted)', whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, tableLayout: 'fixed' }}>
+              <colgroup>
+                <col style={{ width: '13%' }} />
+                <col style={{ width: '12%' }} />
+                <col style={{ width: '10%' }} />
+                <col style={{ width: '10%' }} />
+                <col style={{ width: '10%' }} />
+                <col style={{ width: '9%'  }} />
+                <col style={{ width: '9%'  }} />
+                <col style={{ width: '18%' }} />
+                <col style={{ width: '9%'  }} />
+              </colgroup>
+              <thead>
+                <tr style={{ borderBottom: '2px solid var(--clr-border)', background: '#f8f9fb' }}>
+                  {[
+                    'Course',
+                    'Exam Type',
+                    'Major 1 - Preferred Week',
+                    'Major 2 - Preferred Week',
+                    'Midterm - Preferred Week',
+                    'Preferred',
+                    'Unpreferred',
+                    'Comments',
+                    'Status',
+                  ].map(h => (
+                    <th
+                      key={h}
+                      style={{
+                        padding: '8px 8px', textAlign: 'left',
+                        fontWeight: 600, fontSize: 11,
+                        color: 'var(--clr-muted)',
+                      }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
 
-                <tbody>
-                  <tr style={{ borderBottom: '1px solid var(--clr-border)', verticalAlign: 'top' }}>
+              <tbody>
+                <tr style={{ borderBottom: '1px solid var(--clr-border)', verticalAlign: 'top' }}>
 
-                    {/* Course */}
-                    <td style={{ padding: '14px 12px', whiteSpace: 'nowrap' }}>
-                      <div style={{ fontWeight: 700, fontSize: 14 }}>{course.code}</div>
-                      <div className="text-xs text-muted" style={{ marginTop: 2 }}>{course.name}</div>
-                    </td>
+                  {/* Course */}
+                  <td style={{ padding: '10px 8px' }}>
+                    <div style={{ fontWeight: 700, fontSize: 13 }}>{course.code}</div>
+                    <div className="text-xs text-muted" style={{ marginTop: 2 }}>{course.name}</div>
+                  </td>
 
-                    {/* Exam Type */}
-                    <td style={{ padding: '14px 12px', minWidth: 160 }}>
-                      <select
-                        className="form-input"
-                        disabled={fieldLocked}
-                        value={form.examType || ''}
-                        onChange={e => handleExamTypeChange(e.target.value || null)}
-                        style={{ fontSize: 13, height: 32 }}
-                      >
-                        <option value="">— Select exam type —</option>
-                        {EXAM_TYPE_OPTIONS.map(t => (
-                          <option key={t} value={t}>{t}</option>
-                        ))}
-                      </select>
-                    </td>
+                  {/* Exam Type */}
+                  <td style={{ padding: '10px 8px' }}>
+                    <select
+                      className="form-input"
+                      disabled={fieldLocked}
+                      value={form.examType || ''}
+                      onChange={e => handleExamTypeChange(e.target.value || null)}
+                      style={{ fontSize: 12, height: 30, width: '100%' }}
+                    >
+                      <option value="">— Select —</option>
+                      {EXAM_TYPE_OPTIONS.map(t => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
+                  </td>
 
-                    {/* Major 1 - Preferred Week */}
-                    <td style={{ padding: '14px 12px' }}>
-                      <WeekPicker
-                        selected={form.major1Weeks}
-                        onChange={weeks => updateForm({ major1Weeks: weeks })}
-                        totalWeeks={totalWeeks}
-                        disabled={fieldLocked || !cols.major1}
-                      />
-                    </td>
+                  {/* Major 1 - Preferred Week */}
+                  <td style={{ padding: '10px 8px' }}>
+                    <WeekPicker
+                      selected={form.major1Weeks}
+                      onChange={weeks => updateForm({ major1Weeks: weeks })}
+                      totalWeeks={totalWeeks}
+                      disabled={fieldLocked || !cols.major1}
+                    />
+                  </td>
 
-                    {/* Major 2 - Preferred Week */}
-                    <td style={{ padding: '14px 12px' }}>
-                      <WeekPicker
-                        selected={form.major2Weeks}
-                        onChange={weeks => updateForm({ major2Weeks: weeks })}
-                        totalWeeks={totalWeeks}
-                        disabled={fieldLocked || !cols.major2}
-                      />
-                    </td>
+                  {/* Major 2 - Preferred Week */}
+                  <td style={{ padding: '10px 8px' }}>
+                    <WeekPicker
+                      selected={form.major2Weeks}
+                      onChange={weeks => updateForm({ major2Weeks: weeks })}
+                      totalWeeks={totalWeeks}
+                      disabled={fieldLocked || !cols.major2}
+                    />
+                  </td>
 
-                    {/* Midterm - Preferred Week */}
-                    <td style={{ padding: '14px 12px' }}>
-                      <WeekPicker
-                        selected={form.midtermWeeks}
-                        onChange={weeks => updateForm({ midtermWeeks: weeks })}
-                        totalWeeks={totalWeeks}
-                        disabled={fieldLocked || !cols.midterm}
-                      />
-                    </td>
+                  {/* Midterm - Preferred Week */}
+                  <td style={{ padding: '10px 8px' }}>
+                    <WeekPicker
+                      selected={form.midtermWeeks}
+                      onChange={weeks => updateForm({ midtermWeeks: weeks })}
+                      totalWeeks={totalWeeks}
+                      disabled={fieldLocked || !cols.midterm}
+                    />
+                  </td>
 
-                    {/* Preferred Days */}
-                    <td style={{ padding: '14px 12px', minWidth: 130 }}>
-                      <DayToggleGroup
-                        selected={form.preferredDays}
-                        onChange={handlePreferredChange}
-                        disabledDays={form.unpreferredDays}
-                        disabled={fieldLocked}
-                      />
-                    </td>
+                  {/* Preferred Days */}
+                  <td style={{ padding: '10px 8px' }}>
+                    <DayToggleGroup
+                      selected={form.preferredDays}
+                      onChange={handlePreferredChange}
+                      disabledDays={form.unpreferredDays}
+                      disabled={fieldLocked}
+                    />
+                  </td>
 
-                    {/* Unpreferred Days */}
-                    <td style={{ padding: '14px 12px', minWidth: 130 }}>
-                      <DayToggleGroup
-                        selected={form.unpreferredDays}
-                        onChange={handleUnpreferredChange}
-                        disabledDays={form.preferredDays}
-                        disabled={fieldLocked}
-                      />
-                    </td>
+                  {/* Unpreferred Days */}
+                  <td style={{ padding: '10px 8px' }}>
+                    <DayToggleGroup
+                      selected={form.unpreferredDays}
+                      onChange={handleUnpreferredChange}
+                      disabledDays={form.preferredDays}
+                      disabled={fieldLocked}
+                    />
+                  </td>
 
-                    {/* Comments */}
-                    <td style={{ padding: '14px 12px', minWidth: 220 }}>
-                      <textarea
-                        className="form-input"
-                        disabled={fieldLocked}
-                        value={form.comments}
-                        placeholder="Add scheduling notes, building requirements, grouping constraints..."
-                        rows={3}
-                        onChange={e => updateForm({ comments: e.target.value })}
-                        style={{ fontSize: 12, resize: 'vertical', minHeight: 64, width: '100%' }}
-                      />
-                    </td>
+                  {/* Comments */}
+                  <td style={{ padding: '10px 8px' }}>
+                    <textarea
+                      className="form-input"
+                      disabled={fieldLocked}
+                      value={form.comments}
+                      placeholder="Scheduling notes, building requirements, grouping constraints…"
+                      rows={3}
+                      onChange={e => updateForm({ comments: e.target.value })}
+                      style={{ fontSize: 12, resize: 'vertical', minHeight: 64, width: '100%' }}
+                    />
+                  </td>
 
-                    {/* Status + Action */}
-                    <td style={{ padding: '14px 12px', minWidth: 120 }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                  {/* Status + Action */}
+                  <td style={{ padding: '10px 8px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
 
-                        {/* Status badge */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, color: statusColor }}>
-                          <StatusIcon size={13} />
-                          <span style={{ fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap' }}>{statusLabel}</span>
-                        </div>
-
-                        {/* Submit button — shown when editing and phase allows it */}
-                        {isEditing && !isPhaseClosed && prefStatus !== 'scheduled' && (
-                          <button
-                            className="btn btn-primary btn-sm"
-                            style={{ width: '100%' }}
-                            disabled={!backendOnline || !targetTermId}
-                            onClick={handleSubmit}
-                          >
-                            Submit
-                          </button>
-                        )}
-
-                        {/* Edit button — shown when submitted and phase still active */}
-                        {!isEditing && isPhaseActive && prefStatus === 'submitted' && (
-                          <button
-                            className="btn btn-outline btn-sm"
-                            style={{ width: '100%' }}
-                            onClick={handleEdit}
-                          >
-                            <CalendarDays size={12} /> Edit
-                          </button>
-                        )}
-
-                        {/* Locked indicator */}
-                        {(isPhaseClosed || prefStatus === 'scheduled') && !isEditing && (
-                          <span
-                            className="badge badge-outline"
-                            style={{ color: 'var(--clr-muted)', fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}
-                          >
-                            <Lock size={10} /> Locked
-                          </span>
-                        )}
-
+                      {/* Status badge */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, color: statusColor }}>
+                        <StatusIcon size={13} />
+                        <span style={{ fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap' }}>{statusLabel}</span>
                       </div>
-                    </td>
 
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+                      {/* Submit — while editing and phase is open */}
+                      {isEditing && !isPhaseClosed && prefStatus !== 'scheduled' && (
+                        <button
+                          className="btn btn-primary btn-sm"
+                          style={{ width: '100%' }}
+                          disabled={!backendOnline || !targetTermId}
+                          onClick={handleSubmit}
+                        >
+                          Submit
+                        </button>
+                      )}
+
+                      {/* Edit — after submission while phase still active */}
+                      {!isEditing && isPhaseActive && prefStatus === 'submitted' && (
+                        <button
+                          className="btn btn-outline btn-sm"
+                          style={{ width: '100%' }}
+                          onClick={handleEdit}
+                        >
+                          <CalendarDays size={12} /> Edit
+                        </button>
+                      )}
+
+                      {/* Locked */}
+                      {(isPhaseClosed || prefStatus === 'scheduled') && !isEditing && (
+                        <span
+                          className="badge badge-outline"
+                          style={{ color: 'var(--clr-muted)', fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}
+                        >
+                          <Lock size={10} /> Locked
+                        </span>
+                      )}
+
+                    </div>
+                  </td>
+
+                </tr>
+              </tbody>
+            </table>
           </div>
         )}
 
