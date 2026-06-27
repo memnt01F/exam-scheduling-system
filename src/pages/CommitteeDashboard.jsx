@@ -337,7 +337,7 @@ const Level1Config = ({ formatSlotDate }) => {
 
 /* ── Phase Management Tab (FR-SC4) ── */
 const PhaseManagement = () => {
-  const { phases, saveAllPhases, addAuditLog } = useCourses();
+  const { phases, saveAllPhases, addAuditLog, academicTerms } = useCourses();
   const { user } = useAuth();
   const [localPhases, setLocalPhases] = useState(phases.map(p => ({ ...p })));
 
@@ -413,6 +413,23 @@ const PhaseManagement = () => {
                     setLocalPhases(updated);
                   }}
                 />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Target Term</label>
+                <select
+                  className="form-input"
+                  value={phase.targetTermId || ''}
+                  onChange={e => {
+                    const updated = [...localPhases];
+                    updated[idx] = { ...updated[idx], targetTermId: e.target.value || null };
+                    setLocalPhases(updated);
+                  }}
+                >
+                  <option value="">— Select term —</option>
+                  {academicTerms.map(t => (
+                    <option key={t.id || t._id} value={t.id || t._id}>{t.name}</option>
+                  ))}
+                </select>
               </div>
             </div>
           </div>

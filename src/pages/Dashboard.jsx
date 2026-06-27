@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import DashboardLayout from '../components/DashboardLayout.jsx';
 import { useCourses } from '../context/CoursesContext.jsx';
 import { getRequiredExamTypes, getCourseBookingStatus } from '../lib/mock-data.js';
+import { getPreferences } from '../services/api.js';
 import {
   Clock, CheckCircle2, AlertCircle, ArrowRight, BookOpen, CalendarDays, Lock,
   ChevronDown, ChevronUp, Users, Circle,
@@ -23,12 +24,71 @@ function getTimeLeft(endDate) {
   return { days, hours, minutes };
 }
 
+/* ── Preference Course Row (Phase 0 & Phase 1) ── */
+const PREF_STATUS_CONFIG = {
+  not_started:     { icon: Circle,       label: 'Not Started',      color: 'var(--clr-muted)' },
+  draft:           { icon: Clock,        label: 'Draft',            color: 'var(--clr-warning, #e68a00)' },
+  submitted:       { icon: CheckCircle2, label: 'Submitted',        color: '#3b82f6' },
+  pending_schedule:{ icon: Clock,        label: 'Pending Schedule', color: 'var(--clr-warning, #e68a00)' },
+  scheduled:       { icon: CheckCircle2, label: 'Scheduled',        color: 'var(--clr-primary)' },
+};
+
+const PreferenceCourseRow = ({ course, prefStatus, isPhaseActive, isPhaseClosed, isPhaseUpcoming, onNavigate }) => {
+  const isPendingSchedule = prefStatus === 'submitted' && isPhaseClosed;
+  const displayStatus = isPendingSchedule ? 'pending_schedule' : (prefStatus || 'not_started');
+  const { icon: StatusIcon, label: statusLabel, color: statusColor } = PREF_STATUS_CONFIG[displayStatus] || PREF_STATUS_CONFIG.not_started;
+
+  const isSubmitted = prefStatus === 'submitted';
+  const isScheduled = prefStatus === 'scheduled';
+
+  return (
+    <div className="course-row-wrapper">
+      <div className="course-row">
+        <div className="course-info">
+          <div className="course-code">
+            {course.code}
+            <span className={`badge ${levelBadgeClass[course.level]}`}>L{course.level}</span>
+          </div>
+          <span className="course-name">{course.name}</span>
+        </div>
+
+        <div className="course-actions">
+          <div className="status-indicator" style={{ color: statusColor }}>
+            <StatusIcon size={14} />
+            <span>{statusLabel}</span>
+          </div>
+
+          {isPhaseActive && !isPendingSchedule && !isScheduled && (
+            <button className="btn btn-primary btn-sm" onClick={onNavigate}>
+              {isSubmitted
+                ? <><CalendarDays size={12} /> Edit Preferences</>
+                : <>Submit Preferences <ArrowRight size={12} /></>}
+            </button>
+          )}
+
+          {isPhaseUpcoming && (
+            <button className="btn btn-outline btn-sm" disabled>
+              <Lock size={12} /> Phase Not Open
+            </button>
+          )}
+
+          {(isPhaseClosed || isScheduled) && (
+            <span className="badge badge-outline" style={{ color: 'var(--clr-muted)' }}>
+              <Lock size={10} /> Locked
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ── Booking Course Row (Phase 2) ── */
 const CourseRow = ({ course, isPhaseActive, isPhaseClosed, isPhaseUpcoming, onBook, formatSlotDate }) => {
   const [expanded, setExpanded] = useState(false);
   const status = getCourseBookingStatus(course);
   const bookedTypes = Object.keys(course.bookings || {});
   const requiredTypes = getRequiredExamTypes(course);
-  // For Major mode, show whichever major is already scheduled first.
   const orderedTypes = [...requiredTypes].sort((a, b) => {
     const hasA = !!course.bookings?.[a];
     const hasB = !!course.bookings?.[b];
@@ -64,7 +124,6 @@ const CourseRow = ({ course, isPhaseActive, isPhaseClosed, isPhaseUpcoming, onBo
         </div>
 
         <div className="course-actions">
-          {/* Show booking slot indicators for required types */}
           {hasAnyBooking && (
             <div className="exam-slots-row">
               {orderedTypes.map(type => {
@@ -166,58 +225,88 @@ const CourseRow = ({ course, isPhaseActive, isPhaseClosed, isPhaseUpcoming, onBo
   );
 };
 
+/* ── Dashboard ── */
 const Dashboard = () => {
   const navigate = useNavigate();
-  const { courses, phases, formatSlotDate, refreshBookings } = useCourses();
+  const { courses, phases, formatSlotDate, refreshBookings, backendOnline } = useCourses();
   const { user } = useAuth();
   const now = new Date();
+  const [preferenceMap, setPreferenceMap] = useState({});
 
-  // Sync bookings from backend on mount so all users see the latest state
+  useEffect(() => { refreshBookings(); }, [refreshBookings]);
+
+  // Fetch preference statuses for Phase 0/1 courses whenever phases change
   useEffect(() => {
-    refreshBookings();
-  }, [refreshBookings]);
+    if (!backendOnline || phases.length === 0) return;
+    const uniqueTermIds = [
+      ...new Set(
+        phases
+          .filter(p => p.targetLevels.some(l => l <= 2) && p.targetTermId)
+          .map(p => p.targetTermId)
+      ),
+    ];
+    if (uniqueTermIds.length === 0) return;
+    Promise.all(uniqueTermIds.map(termId => getPreferences({ termId })))
+      .then(results => {
+        const map = {};
+        results.flat().forEach(pref => { map[pref.courseCode] = pref; });
+        setPreferenceMap(map);
+      })
+      .catch(() => {});
+  }, [phases, backendOnline]);
 
-  const activePhase = phases.find((p) => p.isActive && new Date(p.startDate) <= now && new Date(p.endDate) >= now);
+  const activePhase = phases.find(p => p.isActive && new Date(p.startDate) <= now && new Date(p.endDate) >= now);
 
-  // Filter courses for the current coordinator.
-  // Show only non-level-1 courses and those assigned to the logged-in coordinator.
+  // Build set of assigned course codes for this coordinator
   const isCoordinator = user?.role === 'coordinator';
-  // Build a set of canonical course codes that the user is assigned to.
-  // `user.assignedCourses` may contain course codes or client-side ids.
   const assignedCourseValues = Array.isArray(user?.assignedCourses) ? user.assignedCourses : [];
   const assignedCodes = new Set();
   for (const val of assignedCourseValues) {
     if (!val) continue;
     const raw = String(val).trim();
-    // If this value matches a current course id/_serverId, map it to the course.code
     const byId = courses.find(c => String(c.id) === raw || String(c._serverId || '') === raw || String(c._serverId || '') === String(raw));
     if (byId && byId.code) { assignedCodes.add(String(byId.code).replace(/\s+/g, '').toUpperCase()); continue; }
-    // Otherwise treat the value as a code (normalize)
     assignedCodes.add(String(raw).replace(/\s+/g, '').toUpperCase());
   }
 
-  const coordinatorCourses = courses.filter((c) => {
-    if (c.level === 1) return false;
+  const allAssignedCourses = courses.filter(c => {
     if (!isCoordinator) return true;
     const codeNorm = String(c.code || '').replace(/\s+/g, '').toUpperCase();
     return assignedCodes.has(codeNorm);
   });
 
-  const fullyBookedCount = coordinatorCourses.filter(c => getCourseBookingStatus(c) === 'fully_booked').length;
-  const partialCount = coordinatorCourses.filter(c => getCourseBookingStatus(c) === 'partially_booked').length;
-  const totalCount = coordinatorCourses.length;
-  const notBookedCount = coordinatorCourses.filter(c => getCourseBookingStatus(c) === 'not_booked').length;
+  // Split by workflow type
+  const preferenceCourses = allAssignedCourses.filter(c => c.level <= 2);
+  const bookingCourses    = allAssignedCourses.filter(c => c.level > 2);
+  const hasBothTypes      = preferenceCourses.length > 0 && bookingCourses.length > 0;
+
+  // Stats
+  const totalCount         = allAssignedCourses.length;
+  const bookedCount        = bookingCourses.filter(c => getCourseBookingStatus(c) === 'fully_booked').length;
+  const submittedPrefCount = preferenceCourses.filter(c => { const s = preferenceMap[c.code]?.status; return s === 'submitted' || s === 'scheduled'; }).length;
+  const inProgressCount    = bookingCourses.filter(c => getCourseBookingStatus(c) === 'partially_booked').length
+                           + preferenceCourses.filter(c => preferenceMap[c.code]?.status === 'draft').length;
+  const notStartedCount    = bookingCourses.filter(c => getCourseBookingStatus(c) === 'not_booked').length
+                           + preferenceCourses.filter(c => { const s = preferenceMap[c.code]?.status; return !s || s === 'not_started'; }).length;
 
   const [timeLeft, setTimeLeft] = useState(activePhase ? getTimeLeft(activePhase.endDate) : null);
-
   useEffect(() => {
     if (!activePhase) { setTimeLeft(null); return; }
     setTimeLeft(getTimeLeft(activePhase.endDate));
-    const interval = setInterval(() => {
-      setTimeLeft(getTimeLeft(activePhase.endDate));
-    }, 60000);
+    const interval = setInterval(() => setTimeLeft(getTimeLeft(activePhase.endDate)), 60000);
     return () => clearInterval(interval);
   }, [activePhase]);
+
+  const getPhaseForCourse = course => phases.find(p => p.targetLevels.includes(course.level));
+
+  const getPhaseState = coursePhase => {
+    if (!coursePhase) return { isPhaseActive: false, isPhaseClosed: false, isPhaseUpcoming: false };
+    const inRange = new Date(coursePhase.startDate) <= now && new Date(coursePhase.endDate) >= now;
+    const isPhaseActive   = !!(coursePhase.isActive && inRange);
+    const isPhaseClosed   = !!(coursePhase && (!coursePhase.isActive || new Date(coursePhase.endDate) < now));
+    const isPhaseUpcoming = !!(!isPhaseActive && new Date(coursePhase.startDate) > now);
+    return { isPhaseActive, isPhaseClosed, isPhaseUpcoming };
+  };
 
   return (
     <DashboardLayout>
@@ -234,13 +323,9 @@ const Dashboard = () => {
               <div>
                 <p className="phase-name">{activePhase.name}</p>
                 <p className="phase-desc">
-                  {new Date(activePhase.startDate).toLocaleDateString('en-US', {
-                    month: 'short', day: 'numeric', year: 'numeric',
-                  })}
+                  {new Date(activePhase.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                   {' — '}
-                  {new Date(activePhase.endDate).toLocaleDateString('en-US', {
-                    month: 'short', day: 'numeric', year: 'numeric',
-                  })}
+                  {new Date(activePhase.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                 </p>
               </div>
             </div>
@@ -270,32 +355,67 @@ const Dashboard = () => {
 
         <div className="card">
           <div className="card-header">
-            <div className="card-title">
-              <BookOpen size={16} /> My Courses
-            </div>
+            <div className="card-title"><BookOpen size={16} /> My Courses</div>
           </div>
           <div className="card-content">
-            {coordinatorCourses.length === 0 ? (
-              <p className="text-sm text-muted text-center" style={{ padding: 24 }}>No courses assigned to you for self-booking.</p>
-            ) : coordinatorCourses.map((course) => {
-              const coursePhase = phases.find((p) => p.targetLevels.includes(course.level));
-              const phaseInDateRange = coursePhase && new Date(coursePhase.startDate) <= now && new Date(coursePhase.endDate) >= now;
-              const isPhaseActive = (coursePhase?.isActive && phaseInDateRange) || false;
-              const isPhaseClosed = coursePhase && (!coursePhase.isActive || new Date(coursePhase.endDate) < now);
-              const isPhaseUpcoming = coursePhase && !isPhaseActive && new Date(coursePhase.startDate) > now;
+            {allAssignedCourses.length === 0 ? (
+              <p className="text-sm text-muted text-center" style={{ padding: 24 }}>
+                No courses assigned to you yet. Contact an admin to get courses assigned.
+              </p>
+            ) : (
+              <>
+                {preferenceCourses.length > 0 && (
+                  <div>
+                    {hasBothTypes && (
+                      <p className="text-xs font-semibold text-muted" style={{ marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        Preference Submission
+                      </p>
+                    )}
+                    {preferenceCourses.map(course => {
+                      const coursePhase = getPhaseForCourse(course);
+                      const { isPhaseActive, isPhaseClosed, isPhaseUpcoming } = getPhaseState(coursePhase);
+                      const pref = preferenceMap[course.code];
+                      return (
+                        <PreferenceCourseRow
+                          key={course.id}
+                          course={course}
+                          prefStatus={pref?.status || 'not_started'}
+                          isPhaseActive={isPhaseActive}
+                          isPhaseClosed={isPhaseClosed}
+                          isPhaseUpcoming={isPhaseUpcoming}
+                          onNavigate={() => navigate(`/preferences/${course.code}`)}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
 
-              return (
-                <CourseRow
-                  key={course.id}
-                  course={course}
-                  isPhaseActive={isPhaseActive}
-                  isPhaseClosed={!!isPhaseClosed}
-                  isPhaseUpcoming={!!isPhaseUpcoming}
-                  onBook={() => navigate(`/booking/${course.id}`)}
-                  formatSlotDate={formatSlotDate}
-                />
-              );
-            })}
+                {bookingCourses.length > 0 && (
+                  <div style={hasBothTypes ? { marginTop: 16 } : {}}>
+                    {hasBothTypes && (
+                      <p className="text-xs font-semibold text-muted" style={{ marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        Calendar Booking
+                      </p>
+                    )}
+                    {bookingCourses.map(course => {
+                      const coursePhase = getPhaseForCourse(course);
+                      const { isPhaseActive, isPhaseClosed, isPhaseUpcoming } = getPhaseState(coursePhase);
+                      return (
+                        <CourseRow
+                          key={course.id}
+                          course={course}
+                          isPhaseActive={isPhaseActive}
+                          isPhaseClosed={isPhaseClosed}
+                          isPhaseUpcoming={isPhaseUpcoming}
+                          onBook={() => navigate(`/booking/${course.id}`)}
+                          formatSlotDate={formatSlotDate}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </div>
 
@@ -308,20 +428,20 @@ const Dashboard = () => {
           </div>
           <div className="card">
             <div className="card-content" style={{ paddingTop: 20, paddingBottom: 16 }}>
-              <p className="stat-value text-primary">{fullyBookedCount}</p>
-              <p className="stat-label">Booked</p>
+              <p className="stat-value text-primary">{bookedCount + submittedPrefCount}</p>
+              <p className="stat-label">Booked / Submitted</p>
             </div>
           </div>
           <div className="card">
             <div className="card-content" style={{ paddingTop: 20, paddingBottom: 16 }}>
-              <p className="stat-value">{partialCount}</p>
-              <p className="stat-label">Partial</p>
+              <p className="stat-value">{inProgressCount}</p>
+              <p className="stat-label">In Progress</p>
             </div>
           </div>
           <div className="card">
             <div className="card-content" style={{ paddingTop: 20, paddingBottom: 16 }}>
-              <p className="stat-value">{notBookedCount}</p>
-              <p className="stat-label">Awaiting Booking</p>
+              <p className="stat-value">{notStartedCount}</p>
+              <p className="stat-label">Not Started</p>
             </div>
           </div>
         </div>

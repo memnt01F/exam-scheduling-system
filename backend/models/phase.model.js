@@ -9,6 +9,7 @@ const phaseSchema = new mongoose.Schema(
     endDate: { type: Date, required: true },
     isActive: { type: Boolean, default: false },
     targetLevels: { type: [Number], default: [] },
+    targetTermId: { type: mongoose.Schema.Types.ObjectId, ref: "AcademicTerm", default: null },
     updatedBy: { type: String },
   },
   { timestamps: true }

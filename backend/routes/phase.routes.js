@@ -57,7 +57,7 @@ router.put("/:id", async (req, res) => {
   try {
     const { id } = req.params;
     const update = {};
-    const allowed = ["name", "description", "startDate", "endDate", "isActive", "targetLevels", "updatedBy"];
+    const allowed = ["name", "description", "startDate", "endDate", "isActive", "targetLevels", "targetTermId", "updatedBy"];
     for (const k of allowed) if (k in req.body) update[k] = req.body[k];
 
     let before = null;

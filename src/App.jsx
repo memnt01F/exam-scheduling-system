@@ -6,6 +6,7 @@ import { CoursesProvider, useCourses } from "./context/CoursesContext.jsx";
 import Login from "./pages/Login.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
 import BookingPage from "./pages/BookingPage.jsx";
+import PreferencesPage from "./pages/PreferencesPage.jsx";
 import CommitteeDashboard from "./pages/CommitteeDashboard.jsx";
 import AdminDashboard from "./pages/AdminDashboard.jsx";
 import NotFound from "./pages/NotFound.jsx";
@@ -91,6 +92,7 @@ const App = () => (
               <Route path="/" element={<Login />} />
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/booking/:courseId" element={<BookingPage />} />
+              <Route path="/preferences/:courseCode" element={<PreferencesPage />} />
               <Route path="/committee" element={<CommitteeDashboard />} />
               <Route path="/admin" element={<AdminDashboard />} />
               <Route path="*" element={<NotFound />} />

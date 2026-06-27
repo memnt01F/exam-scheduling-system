@@ -181,6 +181,40 @@ export async function updatePhase(id, payload) {
   });
 }
 
+/* ──────────────────────────── Preferences ──────────────────────────── */
+
+/**
+ * Fetch preferences. Pass { courseCode, termId } to get a single course's
+ * preference, or { termId } to get all preferences for a term.
+ */
+export async function getPreferences(params = {}) {
+  const qs = new URLSearchParams();
+  if (params.courseCode) qs.set("courseCode", params.courseCode);
+  if (params.termId) qs.set("termId", params.termId);
+  return request(`/preferences${qs.toString() ? `?${qs}` : ""}`);
+}
+
+/**
+ * Upsert a preference for a course + term (auto-save draft or submit).
+ * payload = { courseCode, termId, submittedBy, examType?, major1Weeks?,
+ *             major2Weeks?, midtermWeeks?, preferredDays?, unpreferredDays?,
+ *             comments?, status? }
+ */
+export async function upsertPreference(payload) {
+  return request("/preferences", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+/** Update a preference by its Mongo _id. */
+export async function updatePreference(id, payload) {
+  return request(`/preferences/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
 /**
  * Probe whether the backend is reachable. Used so the UI can fall back
  * to local mock data when running in the hosted preview (no backend).

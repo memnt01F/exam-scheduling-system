@@ -434,6 +434,7 @@ export const CoursesProvider = ({ children }) => {
       startDate: toDateInput(p.startDate),
       endDate: toDateInput(p.endDate),
       isActive: !!p.isActive,
+      targetTermId: p.targetTermId || null,
     };
   }, []);
 
@@ -454,6 +455,7 @@ export const CoursesProvider = ({ children }) => {
           endDate: p.endDate,
           isActive: p.isActive,
           targetLevels: p.targetLevels,
+          targetTermId: p.targetTermId || null,
           updatedBy: p.updatedBy,
           role: p.role,
         });

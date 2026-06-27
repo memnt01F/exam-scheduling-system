@@ -97,10 +97,16 @@ const SystemSettings = () => {
         </div>
         <div className="card-content">
           {localPhases.map((phase, idx) => (
-            <div key={phase.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr)', gap: 12, alignItems: 'center', padding: '8px 0', borderBottom: idx < localPhases.length - 1 ? '1px solid var(--clr-border)' : 'none' }}>
+            <div key={phase.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.5fr)', gap: 12, alignItems: 'center', padding: '8px 0', borderBottom: idx < localPhases.length - 1 ? '1px solid var(--clr-border)' : 'none' }}>
               <span className="text-sm font-medium">{phase.name}</span>
               <input className="form-input" type="date" value={phase.startDate} onChange={e => { const u = [...localPhases]; u[idx] = { ...u[idx], startDate: e.target.value }; setLocalPhases(u); }} style={{ height: 32, fontSize: 13 }} />
               <input className="form-input" type="date" value={phase.endDate} onChange={e => { const u = [...localPhases]; u[idx] = { ...u[idx], endDate: e.target.value }; setLocalPhases(u); }} style={{ height: 32, fontSize: 13 }} />
+              <select className="form-input" value={phase.targetTermId || ''} onChange={e => { const u = [...localPhases]; u[idx] = { ...u[idx], targetTermId: e.target.value || null }; setLocalPhases(u); }} style={{ height: 32, fontSize: 13 }}>
+                <option value="">— Target term —</option>
+                {terms.map(t => (
+                  <option key={t.id || t._id} value={t.id || t._id}>{t.name}</option>
+                ))}
+              </select>
             </div>
           ))}
           <button className="btn btn-primary btn-sm mt-4" onClick={async () => {
