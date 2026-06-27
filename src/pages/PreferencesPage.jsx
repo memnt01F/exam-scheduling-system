@@ -43,7 +43,8 @@ function getColumnActivity(examType) {
 /* ── Week Picker ── */
 
 const WeekPicker = ({ selected, onChange, totalWeeks, disabled }) => {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen]           = useState(false);
+  const [openUpward, setOpenUpward] = useState(false);
   const containerRef = useRef(null);
 
   // Close when clicking outside
@@ -55,6 +56,16 @@ const WeekPicker = ({ selected, onChange, totalWeeks, disabled }) => {
     document.addEventListener('mousedown', handleOutside);
     return () => document.removeEventListener('mousedown', handleOutside);
   }, [open]);
+
+  const handleToggle = () => {
+    if (disabled) return;
+    if (!open && containerRef.current) {
+      // Flip upward if there isn't enough space below (~240px for the dropdown)
+      const rect = containerRef.current.getBoundingClientRect();
+      setOpenUpward(window.innerHeight - rect.bottom < 240);
+    }
+    setOpen(o => !o);
+  };
 
   const toggleWeek = (w) => {
     onChange(selected.includes(w)
@@ -69,7 +80,7 @@ const WeekPicker = ({ selected, onChange, totalWeeks, disabled }) => {
       <button
         type="button"
         disabled={disabled}
-        onClick={() => !disabled && setOpen(o => !o)}
+        onClick={handleToggle}
         style={{
           display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap',
           padding: '4px 8px', borderRadius: 6,
@@ -96,10 +107,15 @@ const WeekPicker = ({ selected, onChange, totalWeeks, disabled }) => {
         )}
       </button>
 
-      {/* Dropdown */}
+      {/* Dropdown — flips above the trigger when near the bottom of the viewport */}
       {open && (
         <div style={{
-          position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 200,
+          position: 'absolute', zIndex: 200,
+          ...(openUpward
+            ? { bottom: 'calc(100% + 4px)', top: 'auto' }
+            : { top: 'calc(100% + 4px)', bottom: 'auto' }
+          ),
+          left: 0,
           background: '#fff', border: '1px solid var(--clr-border)',
           borderRadius: 8, padding: 12, width: 210,
           boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
@@ -447,13 +463,13 @@ const PreferencesPage = () => {
                 <tr style={{ borderBottom: '1px solid var(--clr-border)', verticalAlign: 'top' }}>
 
                   {/* Course */}
-                  <td style={{ padding: '10px 8px' }}>
+                  <td style={{ padding: '18px 8px' }}>
                     <div style={{ fontWeight: 700, fontSize: 13 }}>{course.code}</div>
                     <div className="text-xs text-muted" style={{ marginTop: 2 }}>{course.name}</div>
                   </td>
 
                   {/* Exam Type */}
-                  <td style={{ padding: '10px 8px' }}>
+                  <td style={{ padding: '18px 8px' }}>
                     <select
                       className="form-input"
                       disabled={fieldLocked}
@@ -469,7 +485,7 @@ const PreferencesPage = () => {
                   </td>
 
                   {/* Major 1 - Preferred Week */}
-                  <td style={{ padding: '10px 8px' }}>
+                  <td style={{ padding: '18px 8px' }}>
                     <WeekPicker
                       selected={form.major1Weeks}
                       onChange={weeks => updateForm({ major1Weeks: weeks })}
@@ -479,7 +495,7 @@ const PreferencesPage = () => {
                   </td>
 
                   {/* Major 2 - Preferred Week */}
-                  <td style={{ padding: '10px 8px' }}>
+                  <td style={{ padding: '18px 8px' }}>
                     <WeekPicker
                       selected={form.major2Weeks}
                       onChange={weeks => updateForm({ major2Weeks: weeks })}
@@ -489,7 +505,7 @@ const PreferencesPage = () => {
                   </td>
 
                   {/* Midterm - Preferred Week */}
-                  <td style={{ padding: '10px 8px' }}>
+                  <td style={{ padding: '18px 8px' }}>
                     <WeekPicker
                       selected={form.midtermWeeks}
                       onChange={weeks => updateForm({ midtermWeeks: weeks })}
@@ -499,7 +515,7 @@ const PreferencesPage = () => {
                   </td>
 
                   {/* Preferred Days */}
-                  <td style={{ padding: '10px 8px' }}>
+                  <td style={{ padding: '18px 8px' }}>
                     <DayToggleGroup
                       selected={form.preferredDays}
                       onChange={handlePreferredChange}
@@ -509,7 +525,7 @@ const PreferencesPage = () => {
                   </td>
 
                   {/* Unpreferred Days */}
-                  <td style={{ padding: '10px 8px' }}>
+                  <td style={{ padding: '18px 8px' }}>
                     <DayToggleGroup
                       selected={form.unpreferredDays}
                       onChange={handleUnpreferredChange}
@@ -519,20 +535,20 @@ const PreferencesPage = () => {
                   </td>
 
                   {/* Comments */}
-                  <td style={{ padding: '10px 8px' }}>
+                  <td style={{ padding: '18px 8px' }}>
                     <textarea
                       className="form-input"
                       disabled={fieldLocked}
                       value={form.comments}
                       placeholder="Scheduling notes, building requirements, grouping constraints…"
-                      rows={3}
+                      rows={5}
                       onChange={e => updateForm({ comments: e.target.value })}
-                      style={{ fontSize: 12, resize: 'vertical', minHeight: 64, width: '100%' }}
+                      style={{ fontSize: 12, resize: 'vertical', minHeight: 110, width: '100%' }}
                     />
                   </td>
 
                   {/* Status + Action */}
-                  <td style={{ padding: '10px 8px' }}>
+                  <td style={{ padding: '18px 8px' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
 
                       {/* Status badge */}
