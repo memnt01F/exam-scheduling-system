@@ -1045,9 +1045,64 @@ export const CoursesProvider = ({ children }) => {
     }
   }, [activateTermCalendar, addAuditLog, backendOnline, normalizeServerTerm]);
 
+  const updateAcademicTerm = useCallback(async (id, data, updatedBy) => {
+    // Optimistic update
+    setAcademicTerms(prev => {
+      let next = prev.map(t =>
+        (t.id === id || t._serverId === id) ? { ...t, ...data } : t
+      );
+      // If activating, demote all others
+      if (data.isActive) {
+        next = next.map(t =>
+          (t.id === id || t._serverId === id)
+            ? t
+            : { ...t, isActive: false, status: t.status === 'active' ? 'past' : t.status }
+        );
+      }
+      return next;
+    });
+
+    if (data.isActive && data.calendarData) activateTermCalendar(data.calendarData);
+
+    addAuditLog({
+      action: 'term_updated',
+      user: updatedBy || 'Admin',
+      details: `Updated term`,
+      role: 'admin',
+    });
+
+    if (!backendOnline) return { success: true, offline: true };
+    try {
+      const updated = await updateTermApi(id, { ...data, updatedBy: updatedBy || 'Admin' });
+      setAcademicTerms(prev =>
+        prev.map(t => (t.id === id || t._serverId === id) ? normalizeServerTerm(updated) : t)
+      );
+      return { success: true, term: updated };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  }, [activateTermCalendar, addAuditLog, backendOnline, normalizeServerTerm]);
+
+  const deleteAcademicTerm = useCallback(async (id, deletedBy) => {
+    if (!backendOnline) return { success: false, error: 'Backend is offline — cannot delete terms.' };
+    try {
+      await deleteTermApi(id, { deletedBy: deletedBy || 'Admin' });
+      setAcademicTerms(prev => prev.filter(t => t.id !== id && t._serverId !== id));
+      addAuditLog({
+        action: 'term_deleted',
+        user: deletedBy || 'Admin',
+        details: `Deleted term`,
+        role: 'admin',
+      });
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  }, [addAuditLog, backendOnline]);
+
   const value = {
     courses, examSlots, phases, auditLogs, users, setUsers,
-    academicTerms, setAcademicTerms, addAcademicTerm, refreshTerms,
+    academicTerms, setAcademicTerms, addAcademicTerm, updateAcademicTerm, deleteAcademicTerm, refreshTerms,
     activeTermCalendar, activateTermCalendar,
     effectiveWeekStartDates, effectiveBlockedDates, effectiveTermStart, effectiveTermEnd,
     getSlotDate, formatSlotDate,
@@ -1071,7 +1126,7 @@ export const useCourses = () => {
   const ctx = useContext(CoursesContext);
   if (!ctx) return {
     courses: [], examSlots: [], phases: [], auditLogs: [], users: [], setUsers: () => {},
-    academicTerms: [], setAcademicTerms: () => {}, addAcademicTerm: async () => ({ success: false }), refreshTerms: async () => null,
+    academicTerms: [], setAcademicTerms: () => {}, addAcademicTerm: async () => ({ success: false }), updateAcademicTerm: async () => ({ success: false }), deleteAcademicTerm: async () => ({ success: false }), refreshTerms: async () => null,
     activeTermCalendar: null, activateTermCalendar: () => {},
     effectiveWeekStartDates: defaultWeekStartDates, effectiveBlockedDates: defaultBlockedDates,
     effectiveTermStart: '2026-01-11', effectiveTermEnd: '2026-05-21',

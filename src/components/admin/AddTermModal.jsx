@@ -4,29 +4,46 @@ import { toast } from 'sonner';
 import { processIcsFile, expandDateRange, generateWeekStartDates } from '../../lib/ics-parser.js';
 
 /**
- * AddTermModal — Two-step flow:
- * Step 1: Enter term metadata + upload .ics file
- * Step 2: Review & edit extracted calendar data before saving
+ * AddTermModal — create or edit an academic term.
+ *
+ * Create mode (term = null): two-step flow — metadata + ICS upload → calendar review.
+ * Edit mode   (term = obj):  same flow, but ICS upload is optional when the term already
+ *                            has calendarData. The admin can proceed straight to the calendar
+ *                            review step and edit events / blocked dates without re-uploading.
  */
-const AddTermModal = ({ onClose, onSave }) => {
+const AddTermModal = ({ onClose, onSave, term = null }) => {
+  const isEdit = !!term;
   const fileRef = useRef(null);
 
-  // Step 1 form
+  // Step 1 form — code and academicYear are creation-only (not stored in backend)
   const [form, setForm] = useState({
-    code: '',
-    name: '',
+    code:         '',
+    name:         term?.name || '',
     academicYear: '',
-    status: 'upcoming',
+    status:       term?.status || (term?.isActive ? 'active' : 'upcoming'),
   });
   const set = (key, val) => setForm(prev => ({ ...prev, [key]: val }));
 
-  // Step 2 review data
+  // Step 2 review data — pre-populated from existing calendarData in edit mode
   const [step, setStep] = useState(1);
-  const [icsData, setIcsData] = useState(null); // { events, termStart, termEnd, blockedDates, weekStartDates }
+  const [icsData, setIcsData] = useState(() => {
+    if (isEdit && term.calendarData) {
+      return {
+        events:         term.calendarData.events       || [],
+        termStart:      term.calendarData.termStart    || term.startDate || '',
+        termEnd:        term.calendarData.termEnd      || term.endDate   || '',
+        blockedDates:   term.calendarData.blockedDates || {},
+        weekStartDates: term.calendarData.weekStartDates || [],
+      };
+    }
+    return null;
+  });
+  const [newIcsUploaded, setNewIcsUploaded] = useState(false);
   const [editingBlockedIdx, setEditingBlockedIdx] = useState(null);
   const [newBlockedDate, setNewBlockedDate] = useState('');
   const [newBlockedReason, setNewBlockedReason] = useState('');
 
+  /* ── File upload ── */
   const handleFileUpload = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -37,13 +54,13 @@ const AddTermModal = ({ onClose, onSave }) => {
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
-        const text = ev.target.result;
-        const result = processIcsFile(text);
+        const result = processIcsFile(ev.target.result);
         if (!result.events.length) {
           toast.error('No events found in the .ics file');
           return;
         }
         setIcsData(result);
+        setNewIcsUploaded(true);
         toast.success(`Parsed ${result.events.length} events from calendar`);
       } catch (err) {
         toast.error('Failed to parse .ics file: ' + err.message);
@@ -52,61 +69,38 @@ const AddTermModal = ({ onClose, onSave }) => {
     reader.readAsText(file);
   };
 
+  /* ── Step navigation ── */
   const handleProceedToReview = () => {
-    if (!form.code.trim()) { toast.error('Term code is required'); return; }
     if (!form.name.trim()) { toast.error('Term name is required'); return; }
-    if (!form.academicYear.trim()) { toast.error('Academic year is required'); return; }
+    if (!isEdit) {
+      if (!form.code.trim()) { toast.error('Term code is required'); return; }
+      if (!form.academicYear.trim()) { toast.error('Academic year is required'); return; }
+    }
     if (!icsData) { toast.error('Please upload an .ics calendar file'); return; }
     setStep(2);
   };
 
-  // Edit functions for step 2
-  const updateTermStart = (val) => {
-    setIcsData(prev => ({ ...prev, termStart: val }));
-  };
-  const updateTermEnd = (val) => {
-    setIcsData(prev => ({ ...prev, termEnd: val }));
-  };
+  /* ── Step 2 edit helpers ── */
+  const updateTermStart = (val) => setIcsData(prev => ({ ...prev, termStart: val }));
+  const updateTermEnd   = (val) => setIcsData(prev => ({ ...prev, termEnd: val }));
+
   const toggleEventBlocked = (idx) => {
     setIcsData(prev => {
       const events = prev.events.map((ev, i) => {
         if (i !== idx) return ev;
         return { ...ev, isBlocked: !ev.isBlocked, blockReason: !ev.isBlocked ? ev.summary : '' };
       });
-      // Rebuild blocked dates
-      const blockedDates = {};
-      for (const ev of events) {
-        if (!ev.isBlocked) continue;
-        const dates = expandDateRange(ev.startDate, ev.endDate);
-        for (const d of dates) blockedDates[d] = ev.blockReason || ev.summary;
-      }
-      // Add any manually added blocked dates that aren't from events
-      for (const [d, reason] of Object.entries(prev.blockedDates)) {
-        const isFromEvent = events.some(ev => ev.isBlocked && expandDateRange(ev.startDate, ev.endDate).includes(d));
-        if (!isFromEvent && !blockedDates[d]) {
-          blockedDates[d] = reason;
-        }
-      }
+      const blockedDates = rebuildBlockedDates(events, prev.blockedDates);
       return { ...prev, events, blockedDates };
     });
   };
 
   const updateEventLabel = (idx, newLabel) => {
     setIcsData(prev => {
-      const events = prev.events.map((ev, i) => i === idx ? { ...ev, summary: newLabel, blockReason: ev.isBlocked ? newLabel : '' } : ev);
-      const blockedDates = {};
-      for (const ev of events) {
-        if (!ev.isBlocked) continue;
-        const dates = expandDateRange(ev.startDate, ev.endDate);
-        for (const d of dates) blockedDates[d] = ev.blockReason || ev.summary;
-      }
-      // Keep manual entries
-      for (const [d, reason] of Object.entries(prev.blockedDates)) {
-        const isFromEvent = events.some(ev => ev.isBlocked && expandDateRange(ev.startDate, ev.endDate).includes(d));
-        if (!isFromEvent && !blockedDates[d]) {
-          blockedDates[d] = reason;
-        }
-      }
+      const events = prev.events.map((ev, i) =>
+        i === idx ? { ...ev, summary: newLabel, blockReason: ev.isBlocked ? newLabel : '' } : ev
+      );
+      const blockedDates = rebuildBlockedDates(events, prev.blockedDates);
       return { ...prev, events, blockedDates };
     });
   };
@@ -114,10 +108,7 @@ const AddTermModal = ({ onClose, onSave }) => {
   const addManualBlockedDate = () => {
     if (!newBlockedDate) { toast.error('Please select a date'); return; }
     const reason = newBlockedReason.trim() || 'Blocked';
-    setIcsData(prev => ({
-      ...prev,
-      blockedDates: { ...prev.blockedDates, [newBlockedDate]: reason },
-    }));
+    setIcsData(prev => ({ ...prev, blockedDates: { ...prev.blockedDates, [newBlockedDate]: reason } }));
     setNewBlockedDate('');
     setNewBlockedReason('');
     toast.success('Blocked date added');
@@ -131,64 +122,111 @@ const AddTermModal = ({ onClose, onSave }) => {
     });
   };
 
+  /* ── Save ── */
   const handleConfirmSave = () => {
     const weekStartDates = generateWeekStartDates(icsData.termStart, icsData.termEnd, icsData.blockedDates);
+    const calendarData = {
+      weekStartDates,
+      blockedDates:   icsData.blockedDates,
+      termStart:      icsData.termStart,
+      termEnd:        icsData.termEnd,
+      events:         icsData.events,
+    };
 
-    // Add Fridays to blocked dates
-    const allBlocked = { ...icsData.blockedDates };
-
-    onSave({
-      id: `t-${Date.now()}`,
-      code: form.code.trim(),
-      name: form.name.trim(),
-      academicYear: form.academicYear.trim(),
-      startDate: icsData.termStart,
-      endDate: icsData.termEnd,
-      isActive: form.status === 'active',
-      status: form.status,
-      calendarData: {
-        weekStartDates,
-        blockedDates: allBlocked,
-        termStart: icsData.termStart,
-        termEnd: icsData.termEnd,
-        events: icsData.events,
-      },
-    });
+    if (isEdit) {
+      onSave({
+        name:       form.name.trim(),
+        startDate:  icsData.termStart,
+        endDate:    icsData.termEnd,
+        isActive:   form.status === 'active',
+        status:     form.status,
+        calendarData,
+      });
+    } else {
+      onSave({
+        id:           `t-${Date.now()}`,
+        code:         form.code.trim(),
+        name:         form.name.trim(),
+        academicYear: form.academicYear.trim(),
+        startDate:    icsData.termStart,
+        endDate:      icsData.termEnd,
+        isActive:     form.status === 'active',
+        status:       form.status,
+        calendarData,
+      });
+    }
   };
 
-  // Sorted blocked dates for display
+  /* ── Derived display values ── */
   const sortedBlockedDates = icsData
     ? Object.entries(icsData.blockedDates).sort(([a], [b]) => a.localeCompare(b))
     : [];
-
-  const blockedCount = sortedBlockedDates.length;
-  const eventCount = icsData?.events?.length || 0;
+  const blockedCount  = sortedBlockedDates.length;
+  const eventCount    = icsData?.events?.length || 0;
   const blockedEvents = icsData?.events?.filter(e => e.isBlocked).length || 0;
 
+  const modalTitle = step === 1
+    ? (isEdit ? 'Edit Academic Term' : 'Add Academic Term')
+    : 'Review & Edit Calendar Data';
+
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, overflow: 'auto', padding: '20px 0' }} onClick={onClose}>
-      <div className="card" style={{ width: step === 2 ? 720 : 480, maxWidth: '95vw', maxHeight: '90vh', overflow: 'auto', margin: '0 auto' }} onClick={e => e.stopPropagation()}>
+    <div
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, overflow: 'auto', padding: '20px 0' }}
+      onClick={onClose}
+    >
+      <div
+        className="card"
+        style={{ width: step === 2 ? 720 : 480, maxWidth: '95vw', maxHeight: '90vh', overflow: 'auto', margin: '0 auto' }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
         <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, background: 'var(--clr-surface)', zIndex: 1 }}>
           <div className="card-title">
-            <Plus size={16} /> {step === 1 ? 'Add Academic Term' : 'Review & Edit Calendar Data'}
+            {isEdit ? <Edit3 size={16} /> : <Plus size={16} />} {modalTitle}
           </div>
           <button className="btn btn-ghost btn-sm" onClick={onClose}><X size={16} /></button>
         </div>
 
+        {/* ── Step 1 ── */}
         {step === 1 && (
           <div className="card-content space-y-3">
-            <div>
-              <label className="text-sm font-medium">Term Code</label>
-              <input className="form-input" value={form.code} onChange={e => set('code', e.target.value)} placeholder="e.g. 233" />
-            </div>
+
+            {/* Name — always shown */}
             <div>
               <label className="text-sm font-medium">Display Name</label>
-              <input className="form-input" value={form.name} onChange={e => set('name', e.target.value)} placeholder="e.g. Term 233 (Summer 2026)" />
+              <input
+                className="form-input"
+                value={form.name}
+                onChange={e => set('name', e.target.value)}
+                placeholder="e.g. Term 233 (Summer 2026)"
+              />
             </div>
-            <div>
-              <label className="text-sm font-medium">Academic Year</label>
-              <input className="form-input" value={form.academicYear} onChange={e => set('academicYear', e.target.value)} placeholder="e.g. 2025-2026" />
-            </div>
+
+            {/* Code + Academic Year — create mode only */}
+            {!isEdit && (
+              <>
+                <div>
+                  <label className="text-sm font-medium">Term Code</label>
+                  <input
+                    className="form-input"
+                    value={form.code}
+                    onChange={e => set('code', e.target.value)}
+                    placeholder="e.g. 233"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Academic Year</label>
+                  <input
+                    className="form-input"
+                    value={form.academicYear}
+                    onChange={e => set('academicYear', e.target.value)}
+                    placeholder="e.g. 2025-2026"
+                  />
+                </div>
+              </>
+            )}
+
+            {/* Status */}
             <div>
               <label className="text-sm font-medium">Status</label>
               <select className="form-input" value={form.status} onChange={e => set('status', e.target.value)}>
@@ -198,19 +236,54 @@ const AddTermModal = ({ onClose, onSave }) => {
               </select>
             </div>
 
-            <div style={{ border: '2px dashed var(--clr-border)', borderRadius: 'var(--radius)', padding: 24, textAlign: 'center', background: 'var(--clr-muted-bg)', cursor: 'pointer' }}
+            {/* Existing calendar data summary (edit mode only) */}
+            {isEdit && icsData && !newIcsUploaded && (
+              <div style={{ background: 'var(--clr-primary-bg, hsl(152 60% 95%))', borderRadius: 'var(--radius)', padding: 12 }}>
+                <p className="text-sm font-medium" style={{ color: 'var(--clr-primary)' }}>
+                  <Check size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />
+                  Existing calendar data loaded
+                </p>
+                <p className="text-xs text-muted mt-1">
+                  {eventCount} events · {blockedCount} blocked dates · {icsData.termStart} to {icsData.termEnd}
+                </p>
+                <p className="text-xs text-muted mt-1">
+                  You can continue to review and edit the calendar, or upload a new .ics file below to replace it entirely.
+                </p>
+              </div>
+            )}
+
+            {/* ICS upload area */}
+            <div
+              style={{ border: '2px dashed var(--clr-border)', borderRadius: 'var(--radius)', padding: 24, textAlign: 'center', background: 'var(--clr-muted-bg)', cursor: 'pointer' }}
               onClick={() => fileRef.current?.click()}
             >
               <Upload size={24} style={{ margin: '0 auto 8px', color: 'var(--clr-muted)' }} />
-              <p className="text-sm font-medium">Upload iCalendar File (.ics)</p>
+              <p className="text-sm font-medium">
+                {isEdit && icsData ? 'Upload new .ics to replace calendar' : 'Upload iCalendar File (.ics)'}
+              </p>
               <p className="text-xs text-muted mt-1">Click to browse or drag and drop</p>
               <input ref={fileRef} type="file" accept=".ics" onChange={handleFileUpload} style={{ display: 'none' }} />
             </div>
 
-            {icsData && (
+            {/* Newly uploaded ICS success */}
+            {newIcsUploaded && icsData && (
               <div style={{ background: 'var(--clr-primary-bg, hsl(152 60% 95%))', borderRadius: 'var(--radius)', padding: 12 }}>
                 <p className="text-sm font-medium" style={{ color: 'var(--clr-primary)' }}>
-                  <Check size={14} style={{ display: 'inline', verticalAlign: 'middle' }} /> Calendar parsed successfully
+                  <Check size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />
+                  New calendar parsed successfully
+                </p>
+                <p className="text-xs text-muted mt-1">
+                  {eventCount} events · {blockedEvents} blocked · {icsData.termStart} to {icsData.termEnd}
+                </p>
+              </div>
+            )}
+
+            {/* Create mode: show parsed summary when ICS is loaded */}
+            {!isEdit && icsData && (
+              <div style={{ background: 'var(--clr-primary-bg, hsl(152 60% 95%))', borderRadius: 'var(--radius)', padding: 12 }}>
+                <p className="text-sm font-medium" style={{ color: 'var(--clr-primary)' }}>
+                  <Check size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />
+                  Calendar parsed successfully
                 </p>
                 <p className="text-xs text-muted mt-1">
                   {eventCount} events · {blockedEvents} blocked · {icsData.termStart} to {icsData.termEnd}
@@ -227,8 +300,10 @@ const AddTermModal = ({ onClose, onSave }) => {
           </div>
         )}
 
+        {/* ── Step 2 ── */}
         {step === 2 && icsData && (
           <div className="card-content space-y-4">
+
             {/* Term dates */}
             <div>
               <h4 className="text-sm font-semibold mb-2">Term Dates</h4>
@@ -244,7 +319,7 @@ const AddTermModal = ({ onClose, onSave }) => {
               </div>
             </div>
 
-            {/* Events */}
+            {/* Events table */}
             <div>
               <h4 className="text-sm font-semibold mb-2">Imported Events ({eventCount})</h4>
               <div style={{ maxHeight: 220, overflow: 'auto', border: '1px solid var(--clr-border)', borderRadius: 'var(--radius)' }}>
@@ -254,10 +329,12 @@ const AddTermModal = ({ onClose, onSave }) => {
                   </thead>
                   <tbody>
                     {icsData.events.map((ev, i) => (
-                      <tr key={ev.id}>
+                      <tr key={ev.id || i}>
                         <td>
                           {editingBlockedIdx === i ? (
-                            <input className="form-input" style={{ height: 28, fontSize: 12 }}
+                            <input
+                              className="form-input"
+                              style={{ height: 28, fontSize: 12 }}
                               value={ev.summary}
                               onChange={e => updateEventLabel(i, e.target.value)}
                               onBlur={() => setEditingBlockedIdx(null)}
@@ -282,12 +359,15 @@ const AddTermModal = ({ onClose, onSave }) => {
                         </td>
                       </tr>
                     ))}
+                    {icsData.events.length === 0 && (
+                      <tr><td colSpan={4} className="text-muted" style={{ textAlign: 'center', padding: 12 }}>No events</td></tr>
+                    )}
                   </tbody>
                 </table>
               </div>
             </div>
 
-            {/* Blocked dates summary */}
+            {/* Blocked dates */}
             <div>
               <h4 className="text-sm font-semibold mb-2">Blocked Dates ({blockedCount})</h4>
               <div style={{ maxHeight: 160, overflow: 'auto', border: '1px solid var(--clr-border)', borderRadius: 'var(--radius)' }}>
@@ -330,6 +410,7 @@ const AddTermModal = ({ onClose, onSave }) => {
               </div>
             </div>
 
+            {/* Active term warning */}
             {form.status === 'active' && (
               <div style={{ background: 'hsl(45 93% 94%)', border: '1px solid hsl(45 80% 70%)', borderRadius: 'var(--radius)', padding: 12, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
                 <AlertTriangle size={16} style={{ color: 'hsl(45 80% 40%)', flexShrink: 0, marginTop: 2 }} />
@@ -345,7 +426,7 @@ const AddTermModal = ({ onClose, onSave }) => {
             <div style={{ display: 'flex', gap: 8, paddingTop: 8 }}>
               <button className="btn btn-outline btn-sm" onClick={() => setStep(1)}>← Back</button>
               <button className="btn btn-primary btn-sm" onClick={handleConfirmSave}>
-                <Check size={14} /> Confirm & Save Term
+                <Check size={14} /> {isEdit ? 'Save Changes' : 'Confirm & Save Term'}
               </button>
               <button className="btn btn-outline btn-sm" onClick={onClose}>Cancel</button>
             </div>
@@ -355,5 +436,24 @@ const AddTermModal = ({ onClose, onSave }) => {
     </div>
   );
 };
+
+/* ── Helpers ─────────────────────────────────────────────────────────────── */
+
+function rebuildBlockedDates(events, existingBlockedDates) {
+  const blockedDates = {};
+  for (const ev of events) {
+    if (!ev.isBlocked) continue;
+    const dates = expandDateRange(ev.startDate, ev.endDate);
+    for (const d of dates) blockedDates[d] = ev.blockReason || ev.summary;
+  }
+  // Preserve manually added dates that aren't covered by any event
+  for (const [d, reason] of Object.entries(existingBlockedDates)) {
+    const isFromEvent = events.some(
+      ev => ev.isBlocked && expandDateRange(ev.startDate, ev.endDate).includes(d)
+    );
+    if (!isFromEvent && !blockedDates[d]) blockedDates[d] = reason;
+  }
+  return blockedDates;
+}
 
 export default AddTermModal;

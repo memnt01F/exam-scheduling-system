@@ -5,7 +5,7 @@ import { useCourses } from '../context/CoursesContext.jsx';
 import { departments } from '../lib/mock-admin-data.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import {
-  Users, Settings, Database, ClipboardList, BookOpen, Trash2, Plus, X,
+  Users, Settings, Database, ClipboardList, BookOpen, Trash2, Plus, X, Pencil,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import UserManagement from '../components/admin/UserManagement.jsx';
@@ -24,23 +24,29 @@ const tabs = [
 
 /* ── System Settings (FR-SA3) ── */
 const SystemSettings = () => {
-  const { phases, updatePhases, saveAllPhases, addAuditLog, academicTerms: terms, addAcademicTerm, activateTermCalendar, effectiveWeekStartDates } = useCourses();
+  const {
+    phases, updatePhases, saveAllPhases, addAuditLog,
+    academicTerms: terms, addAcademicTerm, updateAcademicTerm, deleteAcademicTerm,
+    activateTermCalendar, effectiveWeekStartDates,
+  } = useCourses();
   const { user } = useAuth();
   const [localPhases, setLocalPhases] = useState(phases.map(p => ({ ...p })));
 
-  // Sync local state when context phases change (e.g. committee updated them)
   useEffect(() => {
     setLocalPhases(phases.map(p => ({ ...p })));
   }, [phases]);
-  const [showAddTerm, setShowAddTerm] = useState(false);
+
+  const [showAddTerm, setShowAddTerm]       = useState(false);
+  const [editingTerm, setEditingTerm]       = useState(null); // term object being edited
+  const [confirmDeleteTerm, setConfirmDeleteTerm] = useState(null); // term object pending deletion
 
   const statusLabel = (t) => {
     const now = new Date();
     const start = t.startDate ? new Date(t.startDate) : null;
-    const end = t.endDate ? new Date(t.endDate) : null;
+    const end   = t.endDate   ? new Date(t.endDate)   : null;
     if (start && end) {
       if (now < start) return 'Upcoming';
-      if (now <= end) return 'Active';
+      if (now <= end)  return 'Active';
       return 'Past';
     }
     if (t.status === 'upcoming') return 'Upcoming';
@@ -49,18 +55,40 @@ const SystemSettings = () => {
   const statusClass = (t) => {
     const label = statusLabel(t);
     if (label === 'Upcoming') return 'badge-secondary';
-    if (label === 'Active') return 'badge-primary';
+    if (label === 'Active')   return 'badge-primary';
     return 'badge-outline';
   };
 
+  /* ── Add term ── */
   const handleAddTerm = async (newTerm) => {
-    // Persist via the backend; context handles optimistic state + activation.
-    if (newTerm.isActive && newTerm.calendarData) {
-      activateTermCalendar(newTerm.calendarData);
-    }
+    if (newTerm.isActive && newTerm.calendarData) activateTermCalendar(newTerm.calendarData);
     await addAcademicTerm(newTerm, user?.name || 'Admin');
     setShowAddTerm(false);
     toast.success('Academic term added successfully');
+  };
+
+  /* ── Edit term ── */
+  const handleEditTerm = async (data) => {
+    const id = editingTerm._serverId || editingTerm.id;
+    const result = await updateAcademicTerm(id, data, user?.name || 'Admin');
+    if (result.success) {
+      toast.success('Term updated successfully');
+      setEditingTerm(null);
+    } else {
+      toast.error(result.error || 'Failed to update term');
+    }
+  };
+
+  /* ── Delete term ── */
+  const handleConfirmDelete = async () => {
+    const id = confirmDeleteTerm._serverId || confirmDeleteTerm.id;
+    const result = await deleteAcademicTerm(id, user?.name || 'Admin');
+    if (result.success) {
+      toast.success(`"${confirmDeleteTerm.name}" deleted`);
+    } else {
+      toast.error(result.error || 'Failed to delete term');
+    }
+    setConfirmDeleteTerm(null);
   };
 
   return (
@@ -73,21 +101,49 @@ const SystemSettings = () => {
           </button>
         </div>
         <div className="card-content">
-          <div className="data-table-wrap"><table className="data-table">
-            <thead>
-              <tr><th>Term</th><th>Start</th><th>End</th><th>Status</th></tr>
-            </thead>
-            <tbody>
-              {terms.map(t => (
-                <tr key={t.id}>
-                  <td className="font-medium">{t.name}</td>
-                  <td>{t.startDate}</td>
-                  <td>{t.endDate}</td>
-                  <td><span className={`badge ${statusClass(t)}`} style={{ fontSize: 10 }}>{statusLabel(t)}</span></td>
+          <div className="data-table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Term</th><th>Start</th><th>End</th><th>Status</th>
+                  <th style={{ width: 80, textAlign: 'right' }}>Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table></div>
+              </thead>
+              <tbody>
+                {terms.map(t => (
+                  <tr key={t.id}>
+                    <td className="font-medium">{t.name}</td>
+                    <td>{t.startDate}</td>
+                    <td>{t.endDate}</td>
+                    <td>
+                      <span className={`badge ${statusClass(t)}`} style={{ fontSize: 10 }}>
+                        {statusLabel(t)}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          title="Edit term"
+                          onClick={() => setEditingTerm(t)}
+                        >
+                          <Pencil size={13} />
+                        </button>
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          title="Delete term"
+                          style={{ color: 'var(--clr-danger, #dc2626)' }}
+                          onClick={() => setConfirmDeleteTerm(t)}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
@@ -125,7 +181,44 @@ const SystemSettings = () => {
         </div>
       </div>
 
-      {showAddTerm && <AddTermModal onClose={() => setShowAddTerm(false)} onSave={handleAddTerm} />}
+      {/* Add Term modal */}
+      {showAddTerm && (
+        <AddTermModal onClose={() => setShowAddTerm(false)} onSave={handleAddTerm} />
+      )}
+
+      {/* Edit Term modal — same component, term prop enables edit mode */}
+      {editingTerm && (
+        <AddTermModal
+          term={editingTerm}
+          onClose={() => setEditingTerm(null)}
+          onSave={handleEditTerm}
+        />
+      )}
+
+      {/* Delete confirmation dialog */}
+      {confirmDeleteTerm && (
+        <div className="modal-overlay" onClick={() => setConfirmDeleteTerm(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <h2 className="modal-title">Delete Academic Term</h2>
+            <p className="modal-desc">
+              Are you sure you want to delete <strong>{confirmDeleteTerm.name}</strong>?
+              This action cannot be undone.
+            </p>
+            <div className="modal-footer">
+              <button className="btn btn-outline" onClick={() => setConfirmDeleteTerm(null)}>
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                style={{ background: 'var(--clr-danger, #dc2626)', borderColor: 'var(--clr-danger, #dc2626)' }}
+                onClick={handleConfirmDelete}
+              >
+                <Trash2 size={14} /> Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

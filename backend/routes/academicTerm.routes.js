@@ -6,6 +6,8 @@
  */
 const express = require("express");
 const AcademicTerm = require("../models/academicTerm.model");
+const Phase = require("../models/phase.model");
+const CoursePreference = require("../models/coursePreference.model");
 const AuditLog = require("../models/auditLog.model");
 
 const router = express.Router();
@@ -97,6 +99,30 @@ router.delete("/:id", async (req, res) => {
   try {
     const term = await AcademicTerm.findById(req.params.id);
     if (!term) return res.status(404).json({ message: "Term not found" });
+
+    // Block deletion of the currently active term
+    if (term.isActive) {
+      return res.status(409).json({
+        message: "Cannot delete the active term. Deactivate it by setting another term as active first.",
+      });
+    }
+
+    // Block deletion if any booking phase targets this term
+    const phaseRef = await Phase.findOne({ targetTermId: term._id });
+    if (phaseRef) {
+      return res.status(409).json({
+        message: `Cannot delete this term — it is the target term for "${phaseRef.name}". Reassign the phase first.`,
+      });
+    }
+
+    // Block deletion if coordinator preferences have been submitted for this term
+    const prefCount = await CoursePreference.countDocuments({ termId: term._id });
+    if (prefCount > 0) {
+      return res.status(409).json({
+        message: `Cannot delete this term — ${prefCount} coordinator preference ${prefCount === 1 ? "submission has" : "submissions have"} been recorded against it.`,
+      });
+    }
+
     await term.deleteOne();
     await AuditLog.create({
       action: "DELETE_TERM",
