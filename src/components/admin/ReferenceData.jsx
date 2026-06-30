@@ -3,7 +3,7 @@ import { useCourses } from '../../context/CoursesContext.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { departments } from '../../lib/mock-admin-data.js';
 import {
-  Database, Search, Trash2, Plus, Upload, X, AlertTriangle, CheckCircle2, FileSpreadsheet,
+  Database, Search, Trash2, Plus, Upload, X, AlertTriangle, CheckCircle2, FileSpreadsheet, Pencil,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -199,7 +199,7 @@ function rowToCourse(row) {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 const ReferenceData = () => {
-  const { courses, addCourse, removeCourse } = useCourses();
+  const { courses, addCourse, removeCourse, updateCourse } = useCourses();
   const { user } = useAuth();
   const adminName = user?.name || 'Admin';
 
@@ -208,6 +208,7 @@ const ReferenceData = () => {
   const [filterDept, setFilterDept] = useState('all');
   const [showAddModal, setShowAddModal] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [editingLevel, setEditingLevel] = useState(null); // course object or null
   const [importing, setImporting] = useState(false);
   const [importPreview, setImportPreview] = useState(null); // { courses, duplicates, file }
   const fileInputRef = useRef(null);
@@ -230,6 +231,14 @@ const ReferenceData = () => {
     await removeCourse(id, adminName);
     setConfirmDelete(null);
     toast.success('Course deleted successfully');
+  };
+
+  const handleSaveLevel = async (newLevel) => {
+    const course = editingLevel;
+    setEditingLevel(null);
+    if (!course || newLevel === course.level) return;
+    await updateCourse(course.id, { level: newLevel }, adminName);
+    toast.success(`${course.code} moved to Level ${newLevel}`);
   };
 
   // Step 1: user picks a file → parse and show preview
@@ -343,19 +352,24 @@ const ReferenceData = () => {
         <div className="card-content">
           <div className="data-table-wrap"><table className="data-table">
             <thead>
-              <tr><th>Code</th><th>Name</th><th>Level</th><th>Department</th><th style={{ width: 50 }}></th></tr>
+              <tr><th>Code</th><th>Name</th><th>Level</th><th>Department</th><th style={{ width: 76 }}></th></tr>
             </thead>
             <tbody>
               {filtered.map(c => (
                 <tr key={c.id}>
                   <td className="font-medium">{c.code}</td>
                   <td>{c.name}</td>
-                  <td><span className={`badge badge-level-${c.level}`}>L{c.level}</span></td>
+                  <td style={{ textAlign: 'center' }}><span className={`badge badge-level-${c.level}`}>L{c.level}</span></td>
                   <td className="text-sm">{c.department}</td>
                   <td>
-                    <button className="btn btn-ghost btn-sm" onClick={() => setConfirmDelete(c.id)} title="Delete course">
-                      <Trash2 size={14} color="var(--clr-danger)" />
-                    </button>
+                    <div style={{ display: 'flex', gap: 2 }}>
+                      <button className="btn btn-ghost btn-sm" onClick={() => setEditingLevel(c)} title="Edit course level">
+                        <Pencil size={14} />
+                      </button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => setConfirmDelete(c.id)} title="Delete course">
+                        <Trash2 size={14} color="var(--clr-danger)" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -401,6 +415,15 @@ const ReferenceData = () => {
           message="Are you sure you want to delete this course?"
           onConfirm={() => handleDelete(confirmDelete)}
           onCancel={() => setConfirmDelete(null)}
+        />
+      )}
+
+      {/* Edit Level Modal */}
+      {editingLevel && (
+        <EditLevelModal
+          course={editingLevel}
+          onSave={handleSaveLevel}
+          onCancel={() => setEditingLevel(null)}
         />
       )}
     </div>
@@ -562,6 +585,47 @@ const AddCourseModal = ({ departments, onClose, onSave, onImport }) => {
             <button className="btn btn-outline btn-sm" onClick={onClose}>Cancel</button>
             <button className="btn btn-outline btn-sm" style={{ marginLeft: 'auto' }} onClick={onImport}>
               <Upload size={14} /> Import Excel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Edit Level Modal ──────────────────────────────────────────────────────────
+
+const EditLevelModal = ({ course, onSave, onCancel }) => {
+  const [level, setLevel] = useState(course.level);
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+      <div className="card" style={{ width: 380, maxWidth: '90vw' }}>
+        <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div className="card-title"><Pencil size={16} /> Edit Course Level</div>
+          <button className="btn btn-ghost btn-sm" onClick={onCancel}><X size={16} /></button>
+        </div>
+        <div className="card-content space-y-3">
+          <div>
+            <p className="text-sm font-medium">{course.code}</p>
+            <p className="text-xs text-muted">{course.name}</p>
+          </div>
+          <div>
+            <label className="text-sm font-medium">Level</label>
+            <select className="form-input" value={level} onChange={e => setLevel(parseInt(e.target.value))}>
+              <option value={1}>Level 1</option>
+              <option value={2}>Level 2</option>
+              <option value={3}>Level 3</option>
+              <option value={4}>Level 4</option>
+            </select>
+            <p className="text-xs text-muted" style={{ marginTop: 4 }}>
+              Phase 0 schedules Level 1, Phase 1 schedules Level 2, Phase 2 schedules Levels 3–4. Changing the level moves this course to that phase's workflow.
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: 8, paddingTop: 8, justifyContent: 'flex-end' }}>
+            <button className="btn btn-outline btn-sm" onClick={onCancel}>Cancel</button>
+            <button className="btn btn-primary btn-sm" onClick={() => onSave(level)} disabled={level === course.level}>
+              Save
             </button>
           </div>
         </div>
