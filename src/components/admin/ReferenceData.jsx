@@ -1,11 +1,13 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useMemo, useEffect } from 'react';
 import { useCourses } from '../../context/CoursesContext.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { departments } from '../../lib/mock-admin-data.js';
 import {
   Database, Search, Trash2, Plus, Upload, X, AlertTriangle, CheckCircle2, FileSpreadsheet, Pencil,
+  RefreshCw, ArrowDownToLine,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { importCourseOfferings } from '../../services/api.js';
 
 // ─── Level 1 course list (from requirements) ─────────────────────────────────
 // These courses are always Level 1 regardless of their course number.
@@ -67,12 +69,9 @@ function parseCourseCode(code) {
 }
 
 /**
- * Auto-assign a level based on:
- * 1. If the normalized code is in LEVEL_1_CODES → Level 1
- * 2. If the prefix is "GS" → Level 1
- * 3. Course number 1XX or 2XX → Level 2
- * 4. Course number 3XX or 4XX → Level 3 or 4 respectively
- * 5. Otherwise → Level 2 (safe default)
+ * UX convenience only — pre-fills the Level field in the Add Course modal as the admin types.
+ * NOT authoritative for data writes. Canonical implementation: backend/utils/assignLevel.js
+ * If these rules change, update both files.
  */
 function assignLevel(code) {
   const norm = normalizeCode(code);
@@ -199,24 +198,43 @@ function rowToCourse(row) {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 const ReferenceData = () => {
-  const { courses, addCourse, removeCourse, updateCourse } = useCourses();
+  const { courses, addCourse, removeCourse, updateCourse, academicTerms, refreshCourses } = useCourses();
   const { user } = useAuth();
   const adminName = user?.name || 'Admin';
 
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [filterLevel, setFilterLevel] = useState('all');
   const [filterDept, setFilterDept] = useState('all');
+  const [page, setPage] = useState(1);
   const [showAddModal, setShowAddModal] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
-  const [editingLevel, setEditingLevel] = useState(null); // course object or null
+  const [editingLevel, setEditingLevel] = useState(null);
+  const [showSyncModal, setShowSyncModal] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [importPreview, setImportPreview] = useState(null); // { courses, duplicates, file }
+  const [importPreview, setImportPreview] = useState(null);
   const fileInputRef = useRef(null);
 
-  const allDepts = [...new Set([...departments, ...courses.map(c => c.department)])].filter(Boolean).sort();
-  const existingCodes = new Set(courses.map(c => normalizeCode(c.code)));
+  // Debounce search — avoids filtering 800+ courses on every keypress
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(searchInput), 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
 
-  const filtered = courses.filter(c => {
+  // Reset to page 1 whenever filters change
+  useEffect(() => { setPage(1); }, [search, filterLevel, filterDept]);
+
+  const allDepts = useMemo(
+    () => [...new Set([...departments, ...courses.map(c => c.department)])].filter(Boolean).sort(),
+    [courses]
+  );
+
+  const existingCodes = useMemo(
+    () => new Set(courses.map(c => normalizeCode(c.code))),
+    [courses]
+  );
+
+  const filtered = useMemo(() => courses.filter(c => {
     if (filterLevel !== 'all' && c.level !== parseInt(filterLevel)) return false;
     if (filterDept !== 'all' && c.department !== filterDept) return false;
     if (search) {
@@ -225,7 +243,14 @@ const ReferenceData = () => {
       if (!codeNorm.includes(q) && !c.name.toLowerCase().includes(search.toLowerCase())) return false;
     }
     return true;
-  });
+  }), [courses, filterLevel, filterDept, search]);
+
+  const PAGE_SIZE = 25;
+  const pageCount = Math.ceil(filtered.length / PAGE_SIZE);
+  const paginated = useMemo(
+    () => filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [filtered, page]
+  );
 
   const handleDelete = async (id) => {
     await removeCourse(id, adminName);
@@ -322,8 +347,8 @@ const ReferenceData = () => {
           <input
             className="form-input"
             placeholder="Search course code or name..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
+            value={searchInput}
+            onChange={e => setSearchInput(e.target.value)}
             style={{ paddingLeft: 32 }}
           />
         </div>
@@ -341,13 +366,20 @@ const ReferenceData = () => {
         <button className="btn btn-primary btn-sm" onClick={() => setShowAddModal(true)}>
           <Plus size={14} /> Add Course
         </button>
+        <button className="btn btn-outline btn-sm" onClick={() => setShowSyncModal(true)}>
+          <ArrowDownToLine size={14} /> Sync from Registrar
+        </button>
       </div>
 
       {/* Course List */}
       <div className="card">
         <div className="card-header">
           <div className="card-title"><Database size={16} /> Course List</div>
-          <span className="text-xs text-muted">{courses.length} total</span>
+          <span className="text-xs text-muted">
+            {filtered.length < courses.length
+              ? `${filtered.length} of ${courses.length} courses`
+              : `${courses.length} total`}
+          </span>
         </div>
         <div className="card-content">
           <div className="data-table-wrap"><table className="data-table">
@@ -355,7 +387,7 @@ const ReferenceData = () => {
               <tr><th>Code</th><th>Name</th><th>Level</th><th>Department</th><th style={{ width: 76 }}></th></tr>
             </thead>
             <tbody>
-              {filtered.map(c => (
+              {paginated.map(c => (
                 <tr key={c.id}>
                   <td className="font-medium">{c.code}</td>
                   <td>{c.name}</td>
@@ -378,6 +410,20 @@ const ReferenceData = () => {
               )}
             </tbody>
           </table></div>
+
+          {/* Pagination */}
+          {pageCount > 1 && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 12 }}>
+              <span className="text-xs text-muted">
+                {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length}
+              </span>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <button className="btn btn-outline btn-sm" onClick={() => setPage(p => p - 1)} disabled={page === 1}>Previous</button>
+                <span className="text-xs text-muted">Page {page} of {pageCount}</span>
+                <button className="btn btn-outline btn-sm" onClick={() => setPage(p => p + 1)} disabled={page === pageCount}>Next</button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -424,6 +470,18 @@ const ReferenceData = () => {
           course={editingLevel}
           onSave={handleSaveLevel}
           onCancel={() => setEditingLevel(null)}
+        />
+      )}
+
+      {/* Sync from Registrar Modal */}
+      {showSyncModal && (
+        <SyncFromRegistrarModal
+          terms={academicTerms}
+          importedBy={adminName}
+          onClose={(didImport) => {
+            setShowSyncModal(false);
+            if (didImport) refreshCourses();
+          }}
         />
       )}
     </div>
@@ -587,6 +645,176 @@ const AddCourseModal = ({ departments, onClose, onSave, onImport }) => {
               <Upload size={14} /> Import Excel
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Sync from Registrar Modal ────────────────────────────────────────────────
+
+const SyncFromRegistrarModal = ({ terms, importedBy, onClose }) => {
+  const [selectedTermId, setSelectedTermId] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null); // null = not run yet
+
+  const selectedTerm = terms.find(t => t.id === selectedTermId || t._id === selectedTermId);
+
+  const handleImport = async () => {
+    if (!selectedTermId) return;
+    setLoading(true);
+    setResult(null);
+    try {
+      const data = await importCourseOfferings({
+        termId: selectedTerm?._serverId ?? selectedTermId,
+        importedBy,
+      });
+      setResult({ ...data, success: true });
+    } catch (err) {
+      setResult({ success: false, message: err.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const didImport = result?.success && (result.summary?.inserted > 0 || result.summary?.updated > 0 || result.summary?.cleaned > 0);
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+      <div className="card" style={{ width: 540, maxWidth: '95vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+
+        {/* Header */}
+        <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+          <div className="card-title"><ArrowDownToLine size={16} /> Sync from Registrar</div>
+          <button className="btn btn-ghost btn-sm" onClick={() => onClose(didImport)} disabled={loading}><X size={16} /></button>
+        </div>
+
+        <div className="card-content space-y-4" style={{ overflowY: 'auto' }}>
+
+          {/* Term selection — always visible */}
+          <div>
+            <label className="text-sm font-medium">Academic Term</label>
+            <select
+              className="form-input"
+              value={selectedTermId}
+              onChange={e => { setSelectedTermId(e.target.value); setResult(null); }}
+              disabled={loading}
+            >
+              <option value="">Select a term…</option>
+              {terms.map(t => (
+                <option key={t.id || t._id} value={t.id || t._id}>{t.name}</option>
+              ))}
+            </select>
+            {selectedTerm && (
+              <p className="text-xs text-muted" style={{ marginTop: 4 }}>
+                Import course offerings for <strong>Term {selectedTerm.name}</strong> from the KFUPM Registrar.
+                Only course name and department are updated on existing records. Level, coordinator, and status are never changed by the importer.
+              </p>
+            )}
+          </div>
+
+          {/* Loading */}
+          {loading && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 0', color: 'var(--clr-muted)' }}>
+              <RefreshCw size={16} style={{ animation: 'spin 1s linear infinite' }} />
+              <span className="text-sm">Fetching from registrar — this may take up to 30 seconds…</span>
+            </div>
+          )}
+
+          {/* Error */}
+          {result && !result.success && (
+            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '12px 14px' }}>
+              <p className="text-sm" style={{ color: '#dc2626', fontWeight: 500 }}>Import failed</p>
+              <p className="text-xs" style={{ color: '#dc2626', marginTop: 4 }}>{result.message}</p>
+            </div>
+          )}
+
+          {/* Success summary */}
+          {result?.success && (
+            <div className="space-y-3">
+              <p className="text-sm font-medium">
+                Import complete — Term {result.termName}
+                <span className="text-xs text-muted" style={{ marginLeft: 8 }}>
+                  (registrar code: {result.registrarTermCode})
+                </span>
+              </p>
+
+              {/* Counts */}
+              <div style={{ display: 'grid', gridTemplateColumns: `repeat(${result.summary.cleaned > 0 ? 4 : 3}, 1fr)`, gap: 8 }}>
+                {[
+                  { label: 'Inserted', value: result.summary.inserted, color: 'var(--clr-primary)' },
+                  { label: 'Updated', value: result.summary.updated, color: '#3b82f6' },
+                  { label: 'Unchanged', value: result.summary.unchanged, color: 'var(--clr-muted)' },
+                  ...(result.summary.cleaned > 0 ? [{ label: 'Cleaned up', value: result.summary.cleaned, color: '#ef4444' }] : []),
+                ].map(({ label, value, color }) => (
+                  <div key={label} style={{ background: 'var(--clr-muted-bg)', borderRadius: 8, padding: '10px 14px', textAlign: 'center' }}>
+                    <p style={{ fontSize: 22, fontWeight: 600, color }}>{value}</p>
+                    <p style={{ fontSize: 11, color: 'var(--clr-muted)' }}>{label}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Department changes */}
+              {result.summary.departmentChanges?.length > 0 && (
+                <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '10px 14px' }}>
+                  <p className="text-xs font-medium" style={{ color: '#92400e', marginBottom: 6 }}>
+                    Department changes ({result.summary.departmentChanges.length}) — review coordinator assignments
+                  </p>
+                  {result.summary.departmentChanges.map(({ code, from, to }) => (
+                    <p key={code} className="text-xs" style={{ color: '#92400e' }}>
+                      {code}: {from} → {to}
+                    </p>
+                  ))}
+                </div>
+              )}
+
+              {/* Missing from import */}
+              {result.summary.missingFromImport?.length > 0 && (
+                <div style={{ background: 'var(--clr-muted-bg)', border: '1px solid var(--clr-border)', borderRadius: 8, padding: '10px 14px' }}>
+                  <p className="text-xs font-medium" style={{ marginBottom: 6 }}>
+                    Not found in this import ({result.summary.missingFromImport.length}) — may not be offered this term
+                  </p>
+                  <p className="text-xs text-muted" style={{ lineHeight: 1.7 }}>
+                    {result.summary.missingFromImport.join(', ')}
+                  </p>
+                </div>
+              )}
+
+              {/* Per-department errors */}
+              {result.errors?.length > 0 && (
+                <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px' }}>
+                  <p className="text-xs font-medium" style={{ color: '#dc2626', marginBottom: 6 }}>
+                    Department errors ({result.errors.length})
+                  </p>
+                  {result.errors.map(({ dept, reason }) => (
+                    <p key={dept} className="text-xs" style={{ color: '#dc2626' }}>
+                      {dept}: {reason}
+                    </p>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: '12px 1rem', borderTop: '1px solid var(--clr-border)', display: 'flex', gap: 8, justifyContent: 'flex-end', flexShrink: 0 }}>
+          {!result ? (
+            <>
+              <button className="btn btn-outline btn-sm" onClick={() => onClose(false)} disabled={loading}>Cancel</button>
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={handleImport}
+                disabled={!selectedTermId || loading}
+              >
+                {loading ? 'Importing…' : 'Start Import'}
+              </button>
+            </>
+          ) : (
+            <button className="btn btn-primary btn-sm" onClick={() => onClose(didImport)}>
+              {didImport ? 'Done — Refresh Course List' : 'Close'}
+            </button>
+          )}
         </div>
       </div>
     </div>

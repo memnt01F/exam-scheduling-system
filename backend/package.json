@@ -11,11 +11,15 @@
     "seed:users": "node scripts/seedUsers.js"
   },
   "dependencies": {
+    "axios": "^1.7.9",
+    "axios-cookiejar-support": "^5.0.5",
     "bcryptjs": "^3.0.3",
+    "cheerio": "^1.0.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "mongoose": "^8.5.1",
+    "tough-cookie": "^4.1.4",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

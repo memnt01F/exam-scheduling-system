@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout.jsx';
 import { useCourses } from '../context/CoursesContext.jsx';
@@ -319,9 +319,18 @@ const BookingAdmin = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [levelFilter, setLevelFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(searchInput), 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  useEffect(() => { setPage(1); }, [search, levelFilter, statusFilter]);
 
   const handleDelete = async () => {
     if (!confirmDelete) return;
@@ -341,14 +350,15 @@ const BookingAdmin = () => {
 
   const normalize = (s) => s.replace(/\s+/g, '').toLowerCase();
 
-  // One booking per course (backend rule). Admin UI should show at most one row per course.
-  const allRows = courses.map((c) => {
+  const PAGE_SIZE = 25;
+
+  const allRows = useMemo(() => courses.map((c) => {
     const activeType = Object.keys(c.bookings || {})[0] || null;
     const booking = activeType ? c.bookings[activeType] : null;
     return { course: c, type: activeType, booking };
-  });
+  }), [courses]);
 
-  const filtered = allRows.filter(({ course: c, booking: b }) => {
+  const filtered = useMemo(() => allRows.filter(({ course: c, booking: b }) => {
     if (search) {
       const q = normalize(search);
       if (!normalize(c.code).includes(q) && !normalize(c.name).includes(q)) return false;
@@ -357,7 +367,13 @@ const BookingAdmin = () => {
     if (statusFilter === 'booked' && !b) return false;
     if (statusFilter === 'not_booked' && b) return false;
     return true;
-  });
+  }), [allRows, search, levelFilter, statusFilter]);
+
+  const pageCount = Math.ceil(filtered.length / PAGE_SIZE);
+  const paginated = useMemo(
+    () => filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [filtered, page]
+  );
 
   return (
     <div className="space-y-4">
@@ -368,8 +384,8 @@ const BookingAdmin = () => {
         <input
           className="form-input"
           placeholder="Search by course code or name…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
+          value={searchInput}
+          onChange={e => setSearchInput(e.target.value)}
           style={{ flex: '1 1 220px', minWidth: 180, height: 36, fontSize: 13 }}
         />
         <select className="form-input" value={levelFilter} onChange={e => setLevelFilter(e.target.value)} style={{ width: 120, height: 36, fontSize: 13 }}>
@@ -396,7 +412,7 @@ const BookingAdmin = () => {
               {filtered.length === 0 && (
                 <tr><td colSpan={7} style={{ textAlign: 'center', padding: 24 }} className="text-muted">No matching bookings found.</td></tr>
               )}
-              {filtered.map(({ course: c, type, booking: b }) => {
+              {paginated.map(({ course: c, type, booking: b }) => {
                   return (
                     <tr key={c.id}>
                       <td><strong>{c.code}</strong> <span className="text-xs text-muted">{c.name}</span></td>
@@ -424,6 +440,19 @@ const BookingAdmin = () => {
                 })}
             </tbody>
           </table></div>
+
+          {pageCount > 1 && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 12 }}>
+              <span className="text-xs text-muted">
+                {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length}
+              </span>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <button className="btn btn-outline btn-sm" onClick={() => setPage(p => p - 1)} disabled={page === 1}>Previous</button>
+                <span className="text-xs text-muted">Page {page} of {pageCount}</span>
+                <button className="btn btn-outline btn-sm" onClick={() => setPage(p => p + 1)} disabled={page === pageCount}>Next</button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

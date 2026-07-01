@@ -215,6 +215,20 @@ export async function updatePreference(id, payload) {
   });
 }
 
+/* ──────────────────────────── Course Offerings ──────────────────────────── */
+
+/**
+ * Scrape KFUPM Registrar and upsert courses for the given academic term.
+ * payload = { termId, departments?, importedBy? }
+ * Returns { termName, registrarTermCode, summary, errors }
+ */
+export async function importCourseOfferings(payload) {
+  return request('/course-offerings/import', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
 /**
  * Probe whether the backend is reachable. Used so the UI can fall back
  * to local mock data when running in the hosted preview (no backend).
