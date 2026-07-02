@@ -153,7 +153,7 @@ const SystemSettings = () => {
         </div>
         <div className="card-content">
           {localPhases.map((phase, idx) => (
-            <div key={phase.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.5fr)', gap: 12, alignItems: 'center', padding: '8px 0', borderBottom: idx < localPhases.length - 1 ? '1px solid var(--clr-border)' : 'none' }}>
+            <div key={phase.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.5fr) auto', gap: 12, alignItems: 'center', padding: '8px 0', borderBottom: idx < localPhases.length - 1 ? '1px solid var(--clr-border)' : 'none' }}>
               <span className="text-sm font-medium">{phase.name}</span>
               <input className="form-input" type="date" value={phase.startDate} onChange={e => { const u = [...localPhases]; u[idx] = { ...u[idx], startDate: e.target.value }; setLocalPhases(u); }} style={{ height: 32, fontSize: 13 }} />
               <input className="form-input" type="date" value={phase.endDate} onChange={e => { const u = [...localPhases]; u[idx] = { ...u[idx], endDate: e.target.value }; setLocalPhases(u); }} style={{ height: 32, fontSize: 13 }} />
@@ -163,6 +163,27 @@ const SystemSettings = () => {
                   <option key={t.id || t._id} value={t.id || t._id}>{t.name}</option>
                 ))}
               </select>
+              {/* Active toggle */}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                <span className="text-xs text-muted">{phase.isActive ? 'Active' : 'Inactive'}</span>
+                <button
+                  type="button"
+                  title={phase.isActive ? 'Deactivate phase' : 'Activate phase'}
+                  onClick={() => { const u = [...localPhases]; u[idx] = { ...u[idx], isActive: !phase.isActive }; setLocalPhases(u); }}
+                  style={{
+                    width: 40, height: 22, borderRadius: 11, border: 'none', cursor: 'pointer',
+                    background: phase.isActive ? 'var(--clr-primary)' : 'var(--clr-border)',
+                    position: 'relative', transition: 'background 0.2s', flexShrink: 0,
+                  }}
+                >
+                  <span style={{
+                    position: 'absolute', top: 3,
+                    left: phase.isActive ? 21 : 3,
+                    width: 16, height: 16, borderRadius: '50%', background: 'white',
+                    transition: 'left 0.2s',
+                  }} />
+                </button>
+              </div>
             </div>
           ))}
           <button className="btn btn-primary btn-sm mt-4" onClick={async () => {
