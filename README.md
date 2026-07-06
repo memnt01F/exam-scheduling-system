@@ -30,6 +30,8 @@ A full-stack web application for managing and scheduling exams at KFUPM. Built w
   - [Academic Terms](#academic-terms-apiterms)
   - [Audit Logs](#audit-logs-apiauditlogs)
   - [Anchor Slots](#anchor-slots-apianchors)
+  - [Enrollments](#enrollments-apienrollments)
+  - [Course Offerings](#course-offerings-apicourse-offerings)
 - [Error Handling](#error-handling)
 - [Project Structure](#project-structure)
 
@@ -128,13 +130,12 @@ You should see: `Exam Scheduling Backend is running`
 
 **Available backend scripts:**
 
-| Script           | Command                    | Description                                        |
-|------------------|----------------------------|----------------------------------------------------|
-| Development      | `npm run dev`              | Starts server with nodemon (auto-restart)          |
-| Production       | `npm start`                | Starts server with node                            |
-| Seed all         | `npm run seed`             | Seeds enrollment data **and** default dev accounts |
-| Seed enrollments | `npm run seed:enrollments` | Seeds enrollment data from Excel file only         |
-| Seed dev users   | `npm run seed:users`       | Creates all default accounts (see Test Accounts)   |
+| Script         | Command               | Description                                      |
+|----------------|-----------------------|--------------------------------------------------|
+| Development    | `npm run dev`         | Starts server with nodemon (auto-restart)        |
+| Production     | `npm start`           | Starts server with node                          |
+| Seed           | `npm run seed`        | Creates all default dev accounts (see Test Accounts) |
+| Seed dev users | `npm run seed:users`  | Creates all default accounts (same as above)     |
 
 ---
 
@@ -159,23 +160,18 @@ The frontend will start on **http://localhost:8080** by default.
 
 ## Development Seed Accounts
 
-When running the project locally, seed the database with the single combined command:
+When running the project locally, seed the database with:
 
 ```bash
 # From the backend/ directory
 npm run seed
 ```
 
-This seeds both enrollment data (from the Excel file) **and** all default accounts in one step. If the Excel file is not present, the enrollment step is skipped with a warning and user seeding continues. The script is **idempotent** — running it multiple times is safe. It skips any account that already exists.
-
-You can also run each seeder independently if needed:
-
-```bash
-npm run seed:enrollments   # enrollment data only
-npm run seed:users         # user accounts only
-```
+This creates all default dev accounts. The script is **idempotent** — running it multiple times is safe. It skips any account that already exists.
 
 The seeded accounts are exactly the ones listed in the [Test Accounts](#test-accounts) table below.
+
+> **Enrollment data** is loaded through the admin panel — go to **System Settings → Enrollment Data**, select a term, and upload an `.xlsx` file. Student IDs are masked before storage.
 
 > **Note for coordinators:** Seeded coordinator accounts have no courses assigned by default. After seeding, log in as admin, go to **User Management**, and assign courses to each coordinator so they can see and book their courses on the dashboard.
 
@@ -576,7 +572,7 @@ Returns the full audit trail of all system actions.
 ]
 ```
 
-**Tracked actions:** `CREATE_BOOKING`, `RESCHEDULE_BOOKING`, `CANCEL_BOOKING`, `BOOKING_CONFLICT`
+**Tracked actions:** `CREATE_BOOKING`, `RESCHEDULE_BOOKING`, `CANCEL_BOOKING`, `BOOKING_CONFLICT`, `ENROLLMENT_UPLOAD`
 
 ---
 
@@ -605,6 +601,59 @@ Creates a new anchor slot.
 
 #### `DELETE /api/anchors/:id`
 Removes an anchor slot.
+
+---
+
+### Enrollments `/api/enrollments`
+
+#### `GET /api/enrollments/stats`
+Returns enrollment counts grouped by term.
+
+**Response `200 OK`:**
+```json
+{
+  "stats": [
+    { "termId": "...", "count": 12400, "lastUpdated": "2026-07-06T09:52:57.008Z" }
+  ]
+}
+```
+
+---
+
+#### `POST /api/enrollments/upload` *(multipart/form-data)*
+Uploads an enrollment Excel file for a given term. Replaces all existing enrollments for that term. Student IDs are masked with SHA-256 (truncated to 7 digits) before storage.
+
+**Form fields:** `termId` (string), `importedBy` (string, optional), `file` (.xlsx)
+
+**Responses:**
+- `200 OK` — `{ termName, termId, inserted, replaced }`
+- `400 Bad Request` — missing termId, no file, wrong format, or no valid rows found
+- `404 Not Found` — termId does not exist
+
+---
+
+### Course Offerings `/api/course-offerings`
+
+#### `POST /api/course-offerings/import`
+Scrapes the KFUPM Registrar and upserts courses into the reference data for a given term. Filters out graduate courses (500+), internship/summer training (398/399), and senior project courses.
+
+**Request body:**
+```json
+{
+  "termId": "...",
+  "importedBy": "admin"
+}
+```
+
+**Response `200 OK`:**
+```json
+{
+  "termName": "252",
+  "registrarTermCode": "202520",
+  "summary": { "upserted": 412, "skipped": 0, "cleaned": 3 },
+  "errors": []
+}
+```
 
 ---
 
@@ -656,12 +705,19 @@ exam-scheduling-system/
 │   │   ├── auditLog.routes.js
 │   │   ├── booking.routes.js
 │   │   ├── course.routes.js
+│   │   ├── courseOffering.routes.js
+│   │   ├── enrollment.routes.js
 │   │   ├── phase.routes.js
+│   │   ├── preference.routes.js
 │   │   └── user.routes.js
 │   ├── scripts/
-│   │   └── seedEnrollments.js       # Database seeding script
+│   │   ├── seed.js                  # Runs all seeders
+│   │   └── seedUsers.js             # Seeds default dev accounts
 │   ├── services/
-│   │   └── conflictService.js       # Student conflict detection logic
+│   │   ├── conflictService.js       # Student conflict detection logic
+│   │   └── courseOfferingService.js # KFUPM Registrar scraper
+│   ├── utils/
+│   │   └── hashStudentId.js         # SHA-256 masking for student IDs
 │   ├── .env                         # Environment variables (NOT committed — create from .env.example)
 │   ├── .env.example                 # Template with placeholder values (safe to commit)
 │   ├── .gitignore

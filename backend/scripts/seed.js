@@ -1,13 +1,9 @@
 require("dotenv").config();
 const connectDB = require("../config/db");
-const { run: seedEnrollments } = require("./seedEnrollments");
 const { run: seedUsers } = require("./seedUsers");
 
 async function main() {
   await connectDB(process.env.MONGO_URL);
-
-  console.log("\n── Seeding enrollments ──────────────────────────────────");
-  await seedEnrollments();
 
   console.log("\n── Seeding users ────────────────────────────────────────");
   await seedUsers();

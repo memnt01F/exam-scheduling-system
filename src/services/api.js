@@ -215,6 +215,40 @@ export async function updatePreference(id, payload) {
   });
 }
 
+/* ──────────────────────────── Enrollments ──────────────────────────── */
+
+/** Returns enrollment counts grouped by termId: { stats: [{termId, count, lastUpdated}] } */
+export async function getEnrollmentStats() {
+  return request('/enrollments/stats');
+}
+
+/**
+ * Upload an enrollment Excel file for a given term.
+ * Student IDs are hashed server-side (HMAC-SHA256) before storage.
+ * Replaces all existing enrollments for that term.
+ */
+export async function uploadEnrollments(termId, file, importedBy = 'admin') {
+  const form = new FormData();
+  form.append('termId', termId);
+  form.append('importedBy', importedBy);
+  form.append('file', file);
+
+  const base = import.meta.env.VITE_API_URL
+    ? `${import.meta.env.VITE_API_URL}/api`
+    : '/api';
+
+  const res = await fetch(`${base}/enrollments/upload`, { method: 'POST', body: form });
+  let data = null;
+  const text = await res.text();
+  if (text) { try { data = JSON.parse(text); } catch { data = { message: text }; } }
+  if (!res.ok) {
+    const err = new Error((data && data.message) || `Request failed (${res.status})`);
+    err.status = res.status;
+    throw err;
+  }
+  return data;
+}
+
 /* ──────────────────────────── Course Offerings ──────────────────────────── */
 
 /**

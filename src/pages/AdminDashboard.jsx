@@ -5,12 +5,13 @@ import { useCourses } from '../context/CoursesContext.jsx';
 import { departments } from '../lib/mock-admin-data.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import {
-  Users, Settings, Database, ClipboardList, BookOpen, Trash2, Plus, X, Pencil,
+  Users, Settings, Database, ClipboardList, BookOpen, Trash2, Plus, X, Pencil, Upload, FileSpreadsheet, RefreshCw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import UserManagement from '../components/admin/UserManagement.jsx';
 import ReferenceData from '../components/admin/ReferenceData.jsx';
 import AddTermModal from '../components/admin/AddTermModal.jsx';
+import { getEnrollmentStats, uploadEnrollments } from '../services/api.js';
 
 const tabs = [
   { id: 'users', label: 'User Management', icon: Users },
@@ -36,9 +37,45 @@ const SystemSettings = () => {
     setLocalPhases(phases.map(p => ({ ...p })));
   }, [phases]);
 
-  const [showAddTerm, setShowAddTerm]       = useState(false);
-  const [editingTerm, setEditingTerm]       = useState(null); // term object being edited
-  const [confirmDeleteTerm, setConfirmDeleteTerm] = useState(null); // term object pending deletion
+  const [showAddTerm, setShowAddTerm]             = useState(false);
+  const [editingTerm, setEditingTerm]             = useState(null);
+  const [confirmDeleteTerm, setConfirmDeleteTerm] = useState(null);
+
+  // Enrollment upload state
+  const [enrollmentStats, setEnrollmentStats] = useState([]);
+  const [uploading, setUploading]             = useState(false);
+  const [confirmReplace, setConfirmReplace]   = useState(null);
+
+  useEffect(() => {
+    getEnrollmentStats()
+      .then(data => setEnrollmentStats(data.stats || []))
+      .catch(() => {});
+  }, []);
+
+  const handleEnrollmentUploadForTerm = (termId, termName, file) => {
+    const existing = enrollmentStats.find(s => String(s.termId) === String(termId));
+    if (existing && existing.count > 0) {
+      setConfirmReplace({ termId, termName, existingCount: existing.count, file });
+      return;
+    }
+    doEnrollmentUpload(termId, file);
+  };
+
+  const doEnrollmentUpload = async (termId, file) => {
+    setUploading(true);
+    try {
+      const result = await uploadEnrollments(termId, file, user?.name || 'admin');
+      const skippedNote = result.skipped > 0 ? ` (${result.skipped.toLocaleString()} rows skipped — missing ID or course code)` : '';
+      toast.success(`${result.inserted.toLocaleString()} enrollments uploaded for ${result.termName}${skippedNote}`);
+      const data = await getEnrollmentStats();
+      setEnrollmentStats(data.stats || []);
+    } catch (err) {
+      toast.error(err.message || 'Upload failed');
+    } finally {
+      setUploading(false);
+      setConfirmReplace(null);
+    }
+  };
 
   const statusLabel = (t) => {
     const now = new Date();
@@ -202,6 +239,74 @@ const SystemSettings = () => {
         </div>
       </div>
 
+      {/* Enrollment Data */}
+      <div className="card" style={{ position: 'relative' }}>
+        {uploading && (
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.82)', borderRadius: 'inherit', zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+            <RefreshCw size={22} style={{ animation: 'spin 1s linear infinite', color: 'var(--clr-primary)' }} />
+            <span className="text-sm font-medium">Uploading enrollments — please wait…</span>
+            <span className="text-xs text-muted">This may take a moment for large files.</span>
+          </div>
+        )}
+        <div className="card-header">
+          <div className="card-title"><FileSpreadsheet size={16} /> Enrollment Data</div>
+        </div>
+        <div className="card-content">
+          <p className="text-sm text-muted" style={{ marginBottom: 12 }}>
+            Upload student enrollment files for each term. The system uses this data for conflict detection during scheduling.
+          </p>
+          <div className="data-table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Term</th>
+                  <th style={{ textAlign: 'right' }}>Enrollments</th>
+                  <th>Last Uploaded</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {terms.map(t => {
+                  const termId = t._serverId || t.id;
+                  const stat = enrollmentStats.find(s => String(s.termId) === String(termId));
+                  return (
+                    <tr key={termId}>
+                      <td className="font-medium">{t.name}</td>
+                      <td style={{ textAlign: 'right' }}>
+                        {stat ? stat.count.toLocaleString() : <span className="text-muted">—</span>}
+                      </td>
+                      <td className="text-sm text-muted">
+                        {stat ? new Date(stat.lastUpdated).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        <label
+                          className="btn btn-outline btn-sm"
+                          title="Only .xlsx files are accepted. Student IDs are masked before storage."
+                          style={{ cursor: uploading ? 'not-allowed' : 'pointer', opacity: uploading ? 0.5 : 1 }}
+                        >
+                          <Upload size={13} /> Upload
+                          <input
+                            type="file"
+                            accept=".xlsx,.xls"
+                            style={{ display: 'none' }}
+                            disabled={uploading}
+                            onChange={e => {
+                              const file = e.target.files?.[0];
+                              if (file) handleEnrollmentUploadForTerm(termId, t.name, file);
+                              e.target.value = '';
+                            }}
+                          />
+                        </label>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
       {/* Add Term modal */}
       {showAddTerm && (
         <AddTermModal onClose={() => setShowAddTerm(false)} onSave={handleAddTerm} />
@@ -235,6 +340,32 @@ const SystemSettings = () => {
                 onClick={handleConfirmDelete}
               >
                 <Trash2 size={14} /> Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Enrollment replace confirmation */}
+      {confirmReplace && (
+        <div className="modal-overlay" onClick={() => setConfirmReplace(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <h2 className="modal-title">Replace Enrollment Data?</h2>
+            <p className="modal-desc">
+              <strong>{confirmReplace.termName}</strong> already has{' '}
+              <strong>{confirmReplace.existingCount.toLocaleString()} enrollment records</strong>.
+              Uploading will permanently delete and replace them with the new file.
+            </p>
+            <div className="modal-footer">
+              <button className="btn btn-outline" onClick={() => setConfirmReplace(null)}>
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                style={{ background: 'var(--clr-danger, #dc2626)', borderColor: 'var(--clr-danger, #dc2626)' }}
+                onClick={() => { setConfirmReplace(null); doEnrollmentUpload(confirmReplace.termId, confirmReplace.file); }}
+              >
+                <Upload size={14} /> Replace
               </button>
             </div>
           </div>
