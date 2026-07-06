@@ -257,34 +257,28 @@ const SystemSettings = () => {
           </p>
           <div className="data-table-wrap">
             <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Term</th>
-                  <th style={{ textAlign: 'right' }}>Enrollments</th>
-                  <th>Last Uploaded</th>
-                  <th></th>
-                </tr>
-              </thead>
               <tbody>
                 {terms.map(t => {
                   const termId = t._serverId || t.id;
                   const stat = enrollmentStats.find(s => String(s.termId) === String(termId));
+                  const hasData = stat && stat.count > 0;
                   return (
                     <tr key={termId}>
-                      <td className="font-medium">{t.name}</td>
-                      <td style={{ textAlign: 'right' }}>
-                        {stat ? stat.count.toLocaleString() : <span className="text-muted">—</span>}
+                      <td>
+                        <div className="font-medium">{t.name}</div>
+                        {hasData && (
+                          <div className="text-xs text-muted" style={{ marginTop: 2 }}>
+                            {stat.count.toLocaleString()} enrollments &bull; Uploaded {new Date(stat.lastUpdated).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+                          </div>
+                        )}
                       </td>
-                      <td className="text-sm text-muted">
-                        {stat ? new Date(stat.lastUpdated).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}
-                      </td>
-                      <td style={{ textAlign: 'right' }}>
+                      <td style={{ textAlign: 'right', width: 1, whiteSpace: 'nowrap' }}>
                         <label
-                          className="btn btn-outline btn-sm"
+                          className={`btn ${hasData ? 'btn-outline' : 'btn-primary'} btn-sm`}
                           title="Only .xlsx files are accepted. Student IDs are masked before storage."
                           style={{ cursor: uploading ? 'not-allowed' : 'pointer', opacity: uploading ? 0.5 : 1 }}
                         >
-                          <Upload size={13} /> Upload
+                          <Upload size={13} /> {hasData ? 'Replace' : 'Upload'}
                           <input
                             type="file"
                             accept=".xlsx,.xls"
