@@ -23,19 +23,115 @@ const tabs = [
 
 /* (AddTermModal is now imported from src/components/admin/AddTermModal.jsx) */
 
+/* ── Manage Phases Modal ── */
+const ManagePhasesModal = ({ term, allPhases, onClose, onSave, onInit }) => {
+  const termId = term._serverId || term.id;
+  const termPhases = allPhases.filter(p => String(p.targetTermId) === String(termId));
+  const [local, setLocal] = useState(termPhases.map(p => ({ ...p })));
+  const [saving, setSaving] = useState(false);
+  const [initing, setIniting] = useState(false);
+
+  useEffect(() => {
+    const fresh = allPhases.filter(p => String(p.targetTermId) === String(termId));
+    setLocal(fresh.map(p => ({ ...p })));
+  }, [allPhases, termId]);
+
+  const update = (idx, field, val) =>
+    setLocal(prev => prev.map((p, i) => i === idx ? { ...p, [field]: val } : p));
+
+  const handleSave = async () => {
+    setSaving(true);
+    await onSave(local);
+    setSaving(false);
+  };
+
+  const handleInit = async () => {
+    setIniting(true);
+    await onInit(termId);
+    setIniting(false);
+  };
+
+  const PHASE_LABELS = { 0: 'Level 1 courses', 1: 'Level 2 courses', 2: 'Levels 3 & 4 courses' };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{ maxWidth: 600, width: '90vw' }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <h2 className="modal-title" style={{ margin: 0 }}>Phases — Term {term.name}</h2>
+          <button className="btn btn-ghost btn-sm" onClick={onClose}><X size={16} /></button>
+        </div>
+
+        {local.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '24px 0' }}>
+            <p className="text-sm text-muted" style={{ marginBottom: 16 }}>No phases configured for this term yet.</p>
+            <button className="btn btn-primary btn-sm" onClick={handleInit} disabled={initing}>
+              {initing ? 'Initializing…' : 'Initialize Phases'}
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {local.map((phase, idx) => (
+              <div key={phase.id || idx} style={{ border: '1px solid var(--clr-border)', borderRadius: 8, padding: '12px 14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <div>
+                    <span className="text-sm font-medium">{phase.name}</span>
+                    <span className="text-xs text-muted" style={{ marginLeft: 8 }}>{PHASE_LABELS[phase.phaseNumber] || ''}</span>
+                  </div>
+                  {/* Active toggle */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span className="text-xs text-muted">{phase.isActive ? 'Active' : 'Inactive'}</span>
+                    <button
+                      type="button"
+                      onClick={() => update(idx, 'isActive', !phase.isActive)}
+                      style={{
+                        width: 40, height: 22, borderRadius: 11, border: 'none', cursor: 'pointer',
+                        background: phase.isActive ? 'var(--clr-primary)' : 'var(--clr-border)',
+                        position: 'relative', transition: 'background 0.2s',
+                      }}
+                    >
+                      <span style={{
+                        position: 'absolute', top: 3,
+                        left: phase.isActive ? 21 : 3,
+                        width: 16, height: 16, borderRadius: '50%', background: 'white',
+                        transition: 'left 0.2s',
+                      }} />
+                    </button>
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <div>
+                    <label className="text-xs text-muted">Start Date</label>
+                    <input className="form-input" type="date" value={phase.startDate || ''} onChange={e => update(idx, 'startDate', e.target.value)} style={{ height: 32, fontSize: 13, marginTop: 3 }} />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted">End Date</label>
+                    <input className="form-input" type="date" value={phase.endDate || ''} onChange={e => update(idx, 'endDate', e.target.value)} style={{ height: 32, fontSize: 13, marginTop: 3 }} />
+                  </div>
+                </div>
+              </div>
+            ))}
+            <div className="modal-footer" style={{ paddingTop: 4 }}>
+              <button className="btn btn-outline" onClick={onClose}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+                {saving ? 'Saving…' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 /* ── System Settings (FR-SA3) ── */
 const SystemSettings = () => {
   const {
-    phases, updatePhases, saveAllPhases, addAuditLog,
+    phases, saveTermPhases, initPhasesForTerm, addAuditLog,
     academicTerms: terms, addAcademicTerm, updateAcademicTerm, deleteAcademicTerm,
-    activateTermCalendar, effectiveWeekStartDates,
+    activateTermCalendar,
   } = useCourses();
   const { user } = useAuth();
-  const [localPhases, setLocalPhases] = useState(phases.map(p => ({ ...p })));
-
-  useEffect(() => {
-    setLocalPhases(phases.map(p => ({ ...p })));
-  }, [phases]);
+  const [managingPhasesTerm, setManagingPhasesTerm] = useState(null);
 
   const [showAddTerm, setShowAddTerm]             = useState(false);
   const [editingTerm, setEditingTerm]             = useState(null);
@@ -143,7 +239,7 @@ const SystemSettings = () => {
               <thead>
                 <tr>
                   <th>Term</th><th>Start</th><th>End</th><th>Status</th>
-                  <th style={{ width: 80, textAlign: 'right' }}>Actions</th>
+                  <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -159,6 +255,12 @@ const SystemSettings = () => {
                     </td>
                     <td style={{ textAlign: 'right' }}>
                       <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                        <button
+                          className="btn btn-outline btn-sm"
+                          onClick={() => setManagingPhasesTerm(t)}
+                        >
+                          <Settings size={12} /> Manage Phases
+                        </button>
                         <button
                           className="btn btn-ghost btn-sm"
                           title="Edit term"
@@ -181,61 +283,6 @@ const SystemSettings = () => {
               </tbody>
             </table>
           </div>
-        </div>
-      </div>
-
-      <div className="card">
-        <div className="card-header">
-          <div className="card-title"><Settings size={16} /> Booking Phase Windows</div>
-        </div>
-        <div className="card-content">
-          {localPhases.map((phase, idx) => (
-            <div key={phase.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.5fr) auto', gap: 12, alignItems: 'center', padding: '8px 0', borderBottom: idx < localPhases.length - 1 ? '1px solid var(--clr-border)' : 'none' }}>
-              <span className="text-sm font-medium">{phase.name}</span>
-              <input className="form-input" type="date" value={phase.startDate} onChange={e => { const u = [...localPhases]; u[idx] = { ...u[idx], startDate: e.target.value }; setLocalPhases(u); }} style={{ height: 32, fontSize: 13 }} />
-              <input className="form-input" type="date" value={phase.endDate} onChange={e => { const u = [...localPhases]; u[idx] = { ...u[idx], endDate: e.target.value }; setLocalPhases(u); }} style={{ height: 32, fontSize: 13 }} />
-              <select className="form-input" value={phase.targetTermId || ''} onChange={e => { const u = [...localPhases]; u[idx] = { ...u[idx], targetTermId: e.target.value || null }; setLocalPhases(u); }} style={{ height: 32, fontSize: 13 }}>
-                <option value="">— Target term —</option>
-                {terms.map(t => (
-                  <option key={t.id || t._id} value={t.id || t._id}>{t.name}</option>
-                ))}
-              </select>
-              {/* Active toggle */}
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
-                <span className="text-xs text-muted">{phase.isActive ? 'Active' : 'Inactive'}</span>
-                <button
-                  type="button"
-                  title={phase.isActive ? 'Deactivate phase' : 'Activate phase'}
-                  onClick={() => { const u = [...localPhases]; u[idx] = { ...u[idx], isActive: !phase.isActive }; setLocalPhases(u); }}
-                  style={{
-                    width: 40, height: 22, borderRadius: 11, border: 'none', cursor: 'pointer',
-                    background: phase.isActive ? 'var(--clr-primary)' : 'var(--clr-border)',
-                    position: 'relative', transition: 'background 0.2s', flexShrink: 0,
-                  }}
-                >
-                  <span style={{
-                    position: 'absolute', top: 3,
-                    left: phase.isActive ? 21 : 3,
-                    width: 16, height: 16, borderRadius: '50%', background: 'white',
-                    transition: 'left 0.2s',
-                  }} />
-                </button>
-              </div>
-            </div>
-          ))}
-          <button className="btn btn-primary btn-sm mt-4" onClick={async () => {
-            localPhases.forEach((lp, idx) => {
-              const old = phases[idx];
-              if (!old) return;
-              if (lp.isActive !== old.isActive) {
-                addAuditLog({ action: lp.isActive ? 'phase_activated' : 'phase_deactivated', user: user?.name || 'Admin', details: `${lp.name} ${lp.isActive ? 'activated' : 'deactivated'}` });
-              } else if (lp.startDate !== old.startDate || lp.endDate !== old.endDate) {
-                addAuditLog({ action: 'phase_updated', user: user?.name || 'Admin', details: `${lp.name} dates updated` });
-              }
-            });
-            const result = await saveAllPhases(localPhases.map(p => ({ ...p, updatedBy: user?.name || 'Admin', role: 'admin' })));
-            toast.success(result?.offline ? 'Phase configuration saved (local only — backend offline)' : 'Phase configuration saved');
-          }}>Save Changes</button>
         </div>
       </div>
 
@@ -300,6 +347,24 @@ const SystemSettings = () => {
           </div>
         </div>
       </div>
+
+      {/* Manage Phases modal */}
+      {managingPhasesTerm && (
+        <ManagePhasesModal
+          term={managingPhasesTerm}
+          allPhases={phases}
+          onClose={() => setManagingPhasesTerm(null)}
+          onSave={async (termPhases) => {
+            const result = await saveTermPhases(termPhases.map(p => ({ ...p, updatedBy: user?.name || 'Admin' })));
+            toast.success(result?.offline ? 'Phases saved (local only)' : 'Phases saved');
+            setManagingPhasesTerm(null);
+          }}
+          onInit={async (termId) => {
+            const result = await initPhasesForTerm(termId);
+            if (!result.success) toast.error(result.error || 'Failed to initialize phases');
+          }}
+        />
+      )}
 
       {/* Add Term modal */}
       {showAddTerm && (

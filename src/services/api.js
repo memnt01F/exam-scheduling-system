@@ -181,6 +181,15 @@ export async function updatePhase(id, payload) {
   });
 }
 
+export async function createPhase(payload) {
+  return request("/phases", { method: "POST", body: JSON.stringify(payload) });
+}
+
+/** Auto-create Phase 0/1/2 for a term that has no phases yet. */
+export async function initPhasesForTerm(termId) {
+  return request(`/phases/init/${termId}`, { method: "POST" });
+}
+
 /* ──────────────────────────── Preferences ──────────────────────────── */
 
 /**

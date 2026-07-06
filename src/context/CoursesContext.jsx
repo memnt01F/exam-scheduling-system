@@ -11,6 +11,7 @@ import {
   getAuditLogs, createAuditLog,
   getTerms, createTerm, updateTermApi, deleteTermApi,
   getAnchors, createAnchor, deleteAnchorApi,
+  initPhasesForTerm as initPhasesForTermApi,
 } from '../services/api.js';
 
 const CoursesContext = createContext(null);
@@ -473,6 +474,70 @@ export const CoursesProvider = ({ children }) => {
       return { success: true, offline: true };
     }
   }, [backendOnline, normalizeServerPhase]);
+
+  /** Reload all phases from the backend into context state. */
+  const refreshPhases = useCallback(async () => {
+    try {
+      const serverPhases = await getPhases();
+      if (Array.isArray(serverPhases)) {
+        setPhases(serverPhases.map((p, i) => normalizeServerPhase(p, i)));
+      }
+    } catch (err) {
+      console.warn('[phases] refresh failed:', err.message);
+    }
+  }, [normalizeServerPhase]);
+
+  /**
+   * Save only the phases belonging to one term, merging back into the full list.
+   * termPhases = array of phase objects (already normalized) for one term.
+   */
+  const saveTermPhases = useCallback(async (termPhases) => {
+    if (!backendOnline) {
+      setPhases(prev => {
+        const updated = [...prev];
+        termPhases.forEach(tp => {
+          const idx = updated.findIndex(p => p.id === tp.id || p._id === tp._id);
+          if (idx !== -1) updated[idx] = { ...tp };
+        });
+        return updated;
+      });
+      return { success: true, offline: true };
+    }
+    try {
+      const updated = await Promise.all(termPhases.map(p => {
+        const routeId = p._id || p.id;
+        return updatePhase(routeId, {
+          name: p.name, startDate: p.startDate, endDate: p.endDate,
+          isActive: p.isActive, targetLevels: p.targetLevels,
+          targetTermId: p.targetTermId || null, updatedBy: p.updatedBy,
+        });
+      }));
+      const normalized = updated.filter(Boolean).map((p, i) => normalizeServerPhase(p, i));
+      setPhases(prev => {
+        const next = [...prev];
+        normalized.forEach(np => {
+          const idx = next.findIndex(p => p.id === np.id);
+          if (idx !== -1) next[idx] = np; else next.push(np);
+        });
+        return next.sort((a, b) => a.phaseNumber - b.phaseNumber);
+      });
+      return { success: true };
+    } catch (err) {
+      console.warn('[phases] saveTermPhases failed:', err.message);
+      return { success: true, offline: true };
+    }
+  }, [backendOnline, normalizeServerPhase]);
+
+  /** Initialize Phase 0/1/2 for a term that has none yet, then refresh. */
+  const initPhasesForTerm = useCallback(async (termId) => {
+    try {
+      await initPhasesForTermApi(termId);
+      await refreshPhases();
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  }, [refreshPhases]);
 
   /**
    * Normalize a backend user document into the shape expected by the UI.
@@ -1106,7 +1171,8 @@ export const CoursesProvider = ({ children }) => {
     activeTermCalendar, activateTermCalendar,
     effectiveWeekStartDates, effectiveBlockedDates, effectiveTermStart, effectiveTermEnd,
     getSlotDate, formatSlotDate,
-    updatePhases, saveAllPhases, bookCourse, cancelBooking,
+    updatePhases, saveAllPhases, saveTermPhases, refreshPhases, initPhasesForTerm,
+    bookCourse, cancelBooking,
     addCourse, removeCourse, updateCourse, refreshCourses,
     addUser, updateUser, deleteUser, refreshUsers,
     rescheduleBooking,
@@ -1132,6 +1198,7 @@ export const useCourses = () => {
     effectiveTermStart: '2026-01-11', effectiveTermEnd: '2026-05-21',
     getSlotDate: staticGetSlotDate, formatSlotDate: staticFormatSlotDate,
     updatePhases: () => {}, saveAllPhases: async () => ({ success: false }),
+    saveTermPhases: async () => ({ success: false }), refreshPhases: async () => {}, initPhasesForTerm: async () => ({ success: false }),
     bookCourse: async () => ({ success: false }), cancelBooking: async () => ({ success: false }), addAuditLog: () => {},
     addCourse: async () => ({ success: false }), removeCourse: async () => ({ success: false }),
     updateCourse: async () => ({ success: false }), refreshCourses: async () => null,

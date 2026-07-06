@@ -1,58 +1,110 @@
 /**
- * Phase routes — GET (auto-seeds defaults) and PUT (by _id or phaseNumber).
+ * Phase routes — per-term phase management.
+ *
+ * GET    /api/phases              — all phases (optionally ?termId=xxx)
+ * POST   /api/phases/init/:termId — auto-create Phase 0/1/2 for a term
+ * POST   /api/phases              — create a single phase
+ * PUT    /api/phases/:id          — update a phase (by _id or phaseNumber)
  */
-const express = require("express");
-const mongoose = require("mongoose");
-const Phase = require("../models/phase.model");
-const AuditLog = require("../models/auditLog.model");
+const express   = require("express");
+const mongoose  = require("mongoose");
+const Phase     = require("../models/phase.model");
+const AuditLog  = require("../models/auditLog.model");
 
 const router = express.Router();
 
-const DEFAULT_PHASES = [
+const PHASE_TEMPLATES = [
   {
     phaseNumber: 0,
     name: "Phase 0",
-    description: "Pre-configured anchor slots for Level 1 courses",
-    startDate: new Date("2026-01-11"),
-    endDate: new Date("2026-01-25"),
-    isActive: false,
+    description: "Preference collection for Level 1 courses",
     targetLevels: [1],
   },
   {
     phaseNumber: 1,
     name: "Phase 1",
-    description: "Booking for Level 2 courses",
-    startDate: new Date("2026-01-26"),
-    endDate: new Date("2026-02-15"),
-    isActive: false,
+    description: "Preference collection for Level 2 courses",
     targetLevels: [2],
   },
   {
     phaseNumber: 2,
     name: "Phase 2",
-    description: "Booking for Level 3 and Level 4 courses",
-    startDate: new Date("2026-02-16"),
-    endDate: new Date("2026-03-08"),
-    isActive: false,
+    description: "Preference collection for Level 3 and Level 4 courses",
     targetLevels: [3, 4],
   },
 ];
 
-/** GET /api/phases — returns all, seeding defaults if empty. */
-router.get("/", async (_req, res) => {
+// One-time migration: drop the old global unique index on phaseNumber if it still exists.
+let migrationDone = false;
+async function migrateIndex() {
+  if (migrationDone) return;
+  migrationDone = true;
   try {
-    let phases = await Phase.find().sort({ phaseNumber: 1 });
-    if (phases.length === 0) {
-      await Phase.insertMany(DEFAULT_PHASES);
-      phases = await Phase.find().sort({ phaseNumber: 1 });
+    const indexes = await Phase.collection.indexes();
+    const old = indexes.find(i => i.name === 'phaseNumber_1' && i.unique);
+    if (old) {
+      await Phase.collection.dropIndex('phaseNumber_1');
+      console.log('[phases] Dropped legacy unique index on phaseNumber');
     }
-    res.json(phases);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.warn('[phases] Index migration skipped:', err.message);
+  }
+}
+
+/** GET /api/phases?termId=xxx */
+router.get("/", async (req, res) => {
+  try {
+    await migrateIndex();
+    const filter = {};
+    if (req.query.termId) filter.targetTermId = req.query.termId;
+    const phases = await Phase.find(filter).sort({ phaseNumber: 1 });
+    return res.json(phases);
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
   }
 });
 
-/** PUT /api/phases/:id — id may be Mongo _id OR phaseNumber. */
+/** POST /api/phases/init/:termId — create Phase 0/1/2 for a term if they don't exist yet */
+router.post("/init/:termId", async (req, res) => {
+  const { termId } = req.params;
+  if (!mongoose.Types.ObjectId.isValid(termId)) {
+    return res.status(400).json({ message: "Invalid termId" });
+  }
+  try {
+    const existing = await Phase.find({ targetTermId: termId });
+    if (existing.length > 0) {
+      return res.json({ message: "Phases already exist for this term", phases: existing });
+    }
+
+    const now = new Date();
+    const docs = PHASE_TEMPLATES.map(t => ({
+      ...t,
+      targetTermId: termId,
+      startDate: now,
+      endDate: now,
+      isActive: false,
+    }));
+
+    const phases = await Phase.insertMany(docs);
+    return res.status(201).json({ message: "Phases initialized", phases });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+});
+
+/** POST /api/phases — create a single phase */
+router.post("/", async (req, res) => {
+  try {
+    const { phaseNumber, name, description, startDate, endDate, isActive, targetLevels, targetTermId, updatedBy } = req.body;
+    const phase = await Phase.create({ phaseNumber, name, description, startDate, endDate, isActive, targetLevels, targetTermId, updatedBy });
+    return res.status(201).json(phase);
+  } catch (err) {
+    if (err.code === 11000) return res.status(409).json({ message: "A phase with this number already exists for this term" });
+    return res.status(500).json({ message: err.message });
+  }
+});
+
+/** PUT /api/phases/:id — id may be Mongo _id OR phaseNumber */
 router.put("/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -78,18 +130,18 @@ router.put("/:id", async (req, res) => {
 
     await AuditLog.create({
       action: "UPDATE_PHASE",
-      user: update.updatedBy || "committee",
-      role: req.body.role || "committee",
+      user: update.updatedBy || "admin",
+      role: req.body.role || "admin",
       details: `Updated ${phase.name}: ${oldSummary} → ${newSummary}`,
       metadata: {
         before: { startDate: before.startDate, endDate: before.endDate, isActive: before.isActive },
-        after: { startDate: phase.startDate, endDate: phase.endDate, isActive: phase.isActive },
+        after:  { startDate: phase.startDate,  endDate: phase.endDate,  isActive: phase.isActive  },
       },
     });
 
-    res.json(phase);
+    return res.json(phase);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return res.status(500).json({ message: err.message });
   }
 });
 
