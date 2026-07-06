@@ -5,20 +5,22 @@ import { useCourses } from '../context/CoursesContext.jsx';
 import { departments } from '../lib/mock-admin-data.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import {
-  Users, Settings, Database, ClipboardList, BookOpen, Trash2, Plus, X, Pencil, Upload, FileSpreadsheet, RefreshCw,
+  Users, Settings, Database, ClipboardList, BookOpen, Trash2, Plus, X, Pencil, Upload, FileSpreadsheet, RefreshCw, Calendar,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import UserManagement from '../components/admin/UserManagement.jsx';
 import ReferenceData from '../components/admin/ReferenceData.jsx';
+import SchedulingManagement from '../components/admin/SchedulingManagement.jsx';
 import AddTermModal from '../components/admin/AddTermModal.jsx';
 import { getEnrollmentStats, uploadEnrollments } from '../services/api.js';
 
 const tabs = [
-  { id: 'users', label: 'User Management', icon: Users },
-  { id: 'settings', label: 'System Settings', icon: Settings },
-  { id: 'refdata', label: 'Reference Data', icon: Database },
-  { id: 'audit', label: 'Audit Logs', icon: ClipboardList },
-  { id: 'bookings', label: 'Bookings', icon: BookOpen },
+  { id: 'users',      label: 'User Management',      icon: Users },
+  { id: 'settings',   label: 'System Settings',       icon: Settings },
+  { id: 'refdata',    label: 'Reference Data',        icon: Database },
+  { id: 'scheduling', label: 'Scheduling Management', icon: Calendar },
+  { id: 'audit',      label: 'Audit Logs',            icon: ClipboardList },
+  { id: 'bookings',   label: 'Bookings',              icon: BookOpen },
 ];
 
 /* (AddTermModal is now imported from src/components/admin/AddTermModal.jsx) */
@@ -710,11 +712,12 @@ const AdminDashboard = () => {
 
   const renderTab = () => {
     switch (activeTab) {
-      case 'users': return <UserManagement />;
-      case 'settings': return <SystemSettings />;
-      case 'refdata': return <ReferenceData />;
-      case 'audit': return <AuditLogs />;
-      case 'bookings': return <BookingAdmin />;
+      case 'users':      return <UserManagement />;
+      case 'settings':   return <SystemSettings />;
+      case 'refdata':    return <ReferenceData />;
+      case 'scheduling': return <SchedulingManagement />;
+      case 'audit':      return <AuditLogs />;
+      case 'bookings':   return <BookingAdmin />;
       default: return null;
     }
   };
