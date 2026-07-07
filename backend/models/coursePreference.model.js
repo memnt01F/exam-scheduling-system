@@ -22,6 +22,7 @@ const coursePreferenceSchema = new mongoose.Schema(
       default: "not_started",
     },
     submittedAt: { type: Date, default: null },
+    editedBy: { type: String, default: null },
   },
   { timestamps: true }
 );

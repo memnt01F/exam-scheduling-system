@@ -5,7 +5,8 @@
       "name": "exam-scheduling-frontend",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
-      "port": 8080
+      "port": 8080,
+      "autoPort": true
     }
   ]
 }

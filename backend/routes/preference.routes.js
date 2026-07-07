@@ -20,6 +20,7 @@ const UPDATABLE_FIELDS = [
   "comments",
   "status",
   "submittedAt",
+  "editedBy",
 ];
 
 /** GET /api/preferences?courseCode=&termId= */

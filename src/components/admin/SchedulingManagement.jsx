@@ -3,8 +3,9 @@ import { useCourses } from '../../context/CoursesContext.jsx';
 import { getPreferences } from '../../services/api.js';
 import { toast } from 'sonner';
 import {
-  Search, Bell, ChevronDown, X, Calendar, AlertTriangle,
+  Search, Bell, ChevronDown, Calendar, AlertTriangle, ClipboardList,
 } from 'lucide-react';
+import AdminPreferencesView from './AdminPreferencesView.jsx';
 
 /* ── status config ── */
 const STATUS_CFG = {
@@ -21,7 +22,7 @@ const toDisplayStatus = (raw) => {
 };
 
 /* ── Row "…" menu ── */
-const RowActionsMenu = ({ hasPreference, onView, onRemind }) => {
+const RowActionsMenu = ({ onRemind }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -45,16 +46,8 @@ const RowActionsMenu = ({ hasPreference, onView, onRemind }) => {
           position: 'absolute', right: 0, top: '100%', marginTop: 4,
           background: 'var(--clr-card)', border: '1px solid var(--clr-border)',
           borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-          zIndex: 50, minWidth: 180, padding: 4,
+          zIndex: 50, minWidth: 160, padding: 4,
         }}>
-          <button
-            className="btn btn-ghost btn-sm"
-            disabled={!hasPreference}
-            style={{ width: '100%', textAlign: 'left', justifyContent: 'flex-start', borderRadius: 6, opacity: hasPreference ? 1 : 0.45 }}
-            onClick={() => { setOpen(false); if (hasPreference) onView(); }}
-          >
-            View Preferences
-          </button>
           <button
             className="btn btn-ghost btn-sm"
             style={{ width: '100%', textAlign: 'left', justifyContent: 'flex-start', borderRadius: 6 }}
@@ -68,132 +61,6 @@ const RowActionsMenu = ({ hasPreference, onView, onRemind }) => {
   );
 };
 
-/* ── View Preferences Modal ── */
-const ViewPreferencesModal = ({ row, onClose }) => {
-  const { course, coordinator, pref } = row;
-
-  const Section = ({ label, value }) => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-      <span className="text-xs text-muted" style={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</span>
-      <span className="text-sm">{value || <span className="text-muted">—</span>}</span>
-    </div>
-  );
-
-  const WeekList = ({ label, weeks }) =>
-    weeks && weeks.length > 0 ? (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-        <span className="text-xs text-muted" style={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</span>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {weeks.map(w => (
-            <span key={w} style={{ fontSize: 12, padding: '2px 8px', borderRadius: 10, background: 'var(--clr-surface)', border: '1px solid var(--clr-border)' }}>
-              Week {w}
-            </span>
-          ))}
-        </div>
-      </div>
-    ) : null;
-
-  const DayList = ({ label, days, variant }) =>
-    days && days.length > 0 ? (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-        <span className="text-xs text-muted" style={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</span>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {days.map(d => (
-            <span key={d} style={{
-              fontSize: 12, padding: '2px 8px', borderRadius: 10,
-              background: variant === 'preferred' ? '#dcfce7' : '#fee2e2',
-              color: variant === 'preferred' ? '#16a34a' : '#dc2626',
-              border: `1px solid ${variant === 'preferred' ? '#bbf7d0' : '#fecaca'}`,
-            }}>
-              {d}
-            </span>
-          ))}
-        </div>
-      </div>
-    ) : null;
-
-  const sc = STATUS_CFG[toDisplayStatus(pref.status)];
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" style={{ maxWidth: 560, width: '92vw' }} onClick={e => e.stopPropagation()}>
-        {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
-          <div>
-            <h2 className="modal-title" style={{ margin: 0 }}>{course.code}</h2>
-            <p className="text-sm text-muted" style={{ marginTop: 2 }}>{course.name}</p>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{
-              fontSize: 12, padding: '3px 10px', borderRadius: 12,
-              background: sc.bg, color: sc.color, fontWeight: 500,
-              display: 'flex', alignItems: 'center', gap: 5,
-            }}>
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: sc.dot }} />
-              {toDisplayStatus(pref.status)}
-            </span>
-            <button className="btn btn-ghost btn-sm" onClick={onClose}><X size={16} /></button>
-          </div>
-        </div>
-
-        {/* Meta row */}
-        <div style={{
-          display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12,
-          padding: '12px 14px', background: 'var(--clr-surface)',
-          borderRadius: 8, marginBottom: 18,
-        }}>
-          <Section label="Coordinator" value={coordinator?.name} />
-          <Section label="Submitted by" value={pref.submittedBy} />
-          <Section label="Exam type" value={pref.examType} />
-          <Section
-            label="Last updated"
-            value={pref.updatedAt
-              ? new Date(pref.updatedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-              : null}
-          />
-        </div>
-
-        {/* Week preferences */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {pref.examType === 'Three Majors' ? (
-            <>
-              <WeekList label="Major 1 preferred weeks" weeks={pref.major1Weeks} />
-              <WeekList label="Major 2 preferred weeks" weeks={pref.major2Weeks} />
-              <WeekList label="Midterm preferred weeks" weeks={pref.midtermWeeks} />
-            </>
-          ) : pref.examType === 'Two Majors' ? (
-            <>
-              <WeekList label="Major 1 preferred weeks" weeks={pref.major1Weeks} />
-              <WeekList label="Major 2 preferred weeks" weeks={pref.major2Weeks} />
-            </>
-          ) : pref.examType === 'Midterm' ? (
-            <WeekList label="Midterm preferred weeks" weeks={pref.midtermWeeks} />
-          ) : null}
-
-          <DayList label="Preferred days" days={pref.preferredDays} variant="preferred" />
-          <DayList label="Unpreferred days" days={pref.unpreferredDays} variant="unpreferred" />
-
-          {pref.comments && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-              <span className="text-xs text-muted" style={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}>Comments</span>
-              <p className="text-sm" style={{
-                padding: '10px 12px', background: 'var(--clr-surface)',
-                border: '1px solid var(--clr-border)', borderRadius: 6, margin: 0,
-              }}>
-                {pref.comments}
-              </p>
-            </div>
-          )}
-        </div>
-
-        <div className="modal-footer" style={{ paddingTop: 16 }}>
-          <button className="btn btn-outline" onClick={onClose}>Close</button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 /* ── Main component ── */
 const SchedulingManagement = () => {
   const { phases, academicTerms: terms, courses, users } = useCourses();
@@ -203,12 +70,12 @@ const SchedulingManagement = () => {
   const [preferences, setPreferences]           = useState([]);
   const [loadingPrefs, setLoadingPrefs]         = useState(false);
 
-  const [search, setSearch]             = useState('');
-  const [deptFilter, setDeptFilter]     = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [page, setPage]                 = useState(1);
-  const [reminderOpen, setReminderOpen] = useState(false);
-  const [viewingRow, setViewingRow]     = useState(null);
+  const [search, setSearch]                   = useState('');
+  const [deptFilter, setDeptFilter]           = useState('');
+  const [statusFilter, setStatusFilter]       = useState('');
+  const [page, setPage]                       = useState(1);
+  const [reminderOpen, setReminderOpen]       = useState(false);
+  const [showPreferencesView, setShowPreferencesView] = useState(false);
   const reminderRef = useRef(null);
 
   /* default to latest term */
@@ -315,40 +182,65 @@ const SchedulingManagement = () => {
 
   const handleRemind = () => toast.info('Feature not yet implemented');
 
+  /* ── Sub-view: all preferences ── */
+  if (showPreferencesView) {
+    return (
+      <AdminPreferencesView
+        phaseNum={selectedPhaseNum}
+        termId={selectedTermId}
+        phase={selectedPhase}
+        term={selectedTerm}
+        onBack={() => setShowPreferencesView(false)}
+      />
+    );
+  }
+
   return (
     <div className="space-y-4">
 
-      {/* ── Top bar: phase switcher + term selector ── */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-        <div style={{
-          display: 'flex', gap: 4,
-          background: 'var(--clr-surface)', border: '1px solid var(--clr-border)',
-          borderRadius: 8, padding: 4,
-        }}>
-          {[0, 1].map(n => (
-            <button
-              key={n}
-              onClick={() => setSelectedPhaseNum(n)}
-              className={`btn btn-sm ${selectedPhaseNum === n ? 'btn-primary' : 'btn-ghost'}`}
-              style={{ minWidth: 86 }}
-            >
-              Phase {n}
-            </button>
-          ))}
+      {/* ── Top bar: phase switcher + term selector + view preferences ── */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{
+            display: 'flex', gap: 4,
+            background: 'var(--clr-surface)', border: '1px solid var(--clr-border)',
+            borderRadius: 8, padding: 4, alignSelf: 'flex-start',
+          }}>
+            {[0, 1].map(n => (
+              <button
+                key={n}
+                onClick={() => setSelectedPhaseNum(n)}
+                className={`btn btn-sm ${selectedPhaseNum === n ? 'btn-primary' : 'btn-ghost'}`}
+                style={{ minWidth: 86 }}
+              >
+                Phase {n}
+              </button>
+            ))}
+          </div>
+
+          <select
+            className="form-input"
+            value={selectedTermId}
+            onChange={e => setSelectedTermId(e.target.value)}
+            style={{ width: 'auto', minWidth: 170, height: 34, fontSize: 13 }}
+          >
+            <option value="">Select term…</option>
+            {terms.map(t => {
+              const tId = t._serverId || t.id;
+              return <option key={tId} value={tId}>{t.name}</option>;
+            })}
+          </select>
         </div>
 
-        <select
-          className="form-input"
-          value={selectedTermId}
-          onChange={e => setSelectedTermId(e.target.value)}
-          style={{ height: 34, fontSize: 13, minWidth: 170 }}
+        <button
+          className="btn btn-outline btn-sm"
+          onClick={() => setShowPreferencesView(true)}
+          disabled={!selectedTermId}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}
         >
-          <option value="">Select term…</option>
-          {terms.map(t => {
-            const tId = t._serverId || t.id;
-            return <option key={tId} value={tId}>{t.name}</option>;
-          })}
-        </select>
+          <ClipboardList size={14} />
+          View All Preferences
+        </button>
       </div>
 
       {/* ── Phase info bar ── */}
@@ -565,11 +457,7 @@ const SchedulingManagement = () => {
                             : '—'}
                         </td>
                         <td style={{ textAlign: 'right', paddingRight: 8 }}>
-                          <RowActionsMenu
-                            hasPreference={!!pref}
-                            onView={() => setViewingRow({ course, coordinator, pref })}
-                            onRemind={handleRemind}
-                          />
+                          <RowActionsMenu onRemind={handleRemind} />
                         </td>
                       </tr>
                     );
@@ -637,10 +525,6 @@ const SchedulingManagement = () => {
         </div>
       </div>
 
-      {/* ── View Preferences Modal ── */}
-      {viewingRow && (
-        <ViewPreferencesModal row={viewingRow} onClose={() => setViewingRow(null)} />
-      )}
     </div>
   );
 };
