@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useCourses } from '../../context/CoursesContext.jsx';
-import { getPreferences } from '../../services/api.js';
+import { getPreferences, getEnrollmentStats } from '../../services/api.js';
 import { toast } from 'sonner';
 import {
   Search, Bell, ChevronDown, Calendar, AlertTriangle, ClipboardList,
@@ -76,6 +76,7 @@ const SchedulingManagement = () => {
   const [page, setPage]                       = useState(1);
   const [reminderOpen, setReminderOpen]       = useState(false);
   const [showPreferencesView, setShowPreferencesView] = useState(false);
+  const [enrollmentStats, setEnrollmentStats] = useState([]);
   const reminderRef = useRef(null);
 
   /* default to latest term */
@@ -98,6 +99,13 @@ const SchedulingManagement = () => {
       .catch(() => setPreferences([]))
       .finally(() => setLoadingPrefs(false));
   }, [selectedTermId]);
+
+  /* fetch enrollment stats once on mount */
+  useEffect(() => {
+    getEnrollmentStats()
+      .then(data => setEnrollmentStats(data?.stats || []))
+      .catch(() => setEnrollmentStats([]));
+  }, []);
 
   /* close reminder dropdown on outside click */
   useEffect(() => {
@@ -179,6 +187,10 @@ const SchedulingManagement = () => {
   const closesDate  = selectedPhase?.endDate
     ? new Date(selectedPhase.endDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
     : '—';
+
+  const hasEnrollments = selectedTermId
+    ? enrollmentStats.some(s => String(s.termId) === String(selectedTermId) && s.count > 0)
+    : true;
 
   const handleRemind = () => toast.info('Feature not yet implemented');
 
@@ -510,6 +522,19 @@ const SchedulingManagement = () => {
                 <p className="text-xs" style={{ color: '#b45309', margin: 0 }}>
                   {notStarted + draft} course{notStarted + draft !== 1 ? 's have' : ' has'} not yet been submitted.
                   Generation is not recommended until all submissions are complete.
+                </p>
+              </div>
+            )}
+
+            {!hasEnrollments && selectedTermId && (
+              <div style={{
+                display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 12,
+                padding: '8px 12px',
+                background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6,
+              }}>
+                <AlertTriangle size={14} style={{ color: '#dc2626', flexShrink: 0, marginTop: 1 }} />
+                <p className="text-xs" style={{ color: '#b91c1c', margin: 0 }}>
+                  No enrollment data uploaded for this term. Upload enrollments in the Reference Data tab before generating a schedule.
                 </p>
               </div>
             )}
