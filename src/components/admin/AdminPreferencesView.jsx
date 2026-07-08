@@ -3,7 +3,7 @@ import { useAuth } from '../../context/AuthContext.jsx';
 import { useCourses } from '../../context/CoursesContext.jsx';
 import { getPreferences, upsertPreference, updatePreference } from '../../services/api.js';
 import { toast } from 'sonner';
-import { ArrowLeft, Search, CheckCircle2, Clock, Circle } from 'lucide-react';
+import { ArrowLeft, Search, CheckCircle2, Clock, Circle, Lock } from 'lucide-react';
 import {
   EXAM_TYPE_OPTIONS, EMPTY_FORM, getColumnActivity,
   WeekPicker, DayToggleGroup,
@@ -180,6 +180,8 @@ const AdminPreferencesView = ({ phaseNum, termId, phase, term, onBack }) => {
     }
   };
 
+  const phaseActive = !!phase?.isActive;
+
   /* ── Render ── */
 
   return (
@@ -203,6 +205,20 @@ const AdminPreferencesView = ({ phaseNum, termId, phase, term, onBack }) => {
           </p>
         </div>
       </div>
+
+      {/* Phase closed banner */}
+      {!phaseActive && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10,
+          padding: '10px 14px', borderRadius: 8,
+          background: '#f3f4f6', border: '1px solid var(--clr-border)',
+        }}>
+          <Lock size={14} style={{ color: 'var(--clr-muted)', flexShrink: 0 }} />
+          <p className="text-sm" style={{ margin: 0, color: 'var(--clr-muted)' }}>
+            This phase is not currently active. Preferences are view-only.
+          </p>
+        </div>
+      )}
 
       {/* Search + Department filter */}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -284,7 +300,7 @@ const AdminPreferencesView = ({ phaseNum, termId, phase, term, onBack }) => {
 
                   const { form, isEditing, saving, dbStatus, editedBy } = state;
                   const cols   = getColumnActivity(form.examType);
-                  const locked = !isEditing;
+                  const locked = !isEditing || !phaseActive;
                   const { icon: StatusIcon, label: statusLabel, color: statusColor } =
                     STATUS_CONFIG[dbStatus] || STATUS_CONFIG.not_started;
 
@@ -413,7 +429,7 @@ const AdminPreferencesView = ({ phaseNum, termId, phase, term, onBack }) => {
                             </span>
                           )}
 
-                          {isEditing && (
+                          {phaseActive && isEditing && (
                             <button
                               className="btn btn-primary btn-sm"
                               style={{ width: '100%' }}
@@ -424,7 +440,7 @@ const AdminPreferencesView = ({ phaseNum, termId, phase, term, onBack }) => {
                             </button>
                           )}
 
-                          {!isEditing && (dbStatus === 'submitted' || dbStatus === 'draft') && (
+                          {phaseActive && !isEditing && (dbStatus === 'submitted' || dbStatus === 'draft') && (
                             <button
                               className="btn btn-outline btn-sm"
                               style={{ width: '100%' }}
