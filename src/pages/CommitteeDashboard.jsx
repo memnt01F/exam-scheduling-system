@@ -360,31 +360,6 @@ const PhaseManagement = () => {
                 <span className={`badge ${phase.isActive ? 'badge-primary' : 'badge-outline'}`}>
                   {phase.isActive ? 'Active' : 'Inactive'}
                 </span>
-                {phase.id !== 'p0' && (
-                  <label style={{ position: 'relative', display: 'inline-block', width: 44, height: 24, cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      checked={phase.isActive}
-                      onChange={() => {
-                        const updated = [...localPhases];
-                        updated[idx] = { ...updated[idx], isActive: !updated[idx].isActive };
-                        setLocalPhases(updated);
-                      }}
-                      style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
-                    />
-                    <span style={{
-                      position: 'absolute', inset: 0, borderRadius: 9999, zIndex: 1,
-                      backgroundColor: phase.isActive ? '#22c55e' : '#cbd5e1',
-                      transition: 'background-color 0.2s',
-                    }} />
-                    <span style={{
-                      position: 'absolute', top: 2, left: phase.isActive ? 22 : 2, zIndex: 2,
-                      width: 20, height: 20, borderRadius: '50%',
-                      backgroundColor: '#ffffff', transition: 'left 0.2s',
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-                    }} />
-                  </label>
-                )}
               </div>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
@@ -436,17 +411,15 @@ const PhaseManagement = () => {
         </div>
       ))}
       <button className="btn btn-primary" onClick={async () => {
-        // Log phase changes
+        const invalid = localPhases.find(p => p.startDate && p.endDate && p.startDate > p.endDate);
+        if (invalid) {
+          toast.error(`${invalid.name}: start date cannot be after end date`);
+          return;
+        }
         localPhases.forEach((lp, idx) => {
           const old = phases[idx];
           if (!old) return;
-          if (lp.isActive !== old.isActive) {
-            addAuditLog({
-              action: lp.isActive ? 'phase_activated' : 'phase_deactivated',
-              user: user?.name || 'Committee',
-              details: `${lp.name} ${lp.isActive ? 'activated' : 'deactivated'}`,
-            });
-          } else if (lp.startDate !== old.startDate || lp.endDate !== old.endDate) {
+          if (lp.startDate !== old.startDate || lp.endDate !== old.endDate) {
             addAuditLog({
               action: 'phase_updated',
               user: user?.name || 'Committee',

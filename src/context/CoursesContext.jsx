@@ -434,7 +434,7 @@ export const CoursesProvider = ({ children }) => {
       targetLevels: p.targetLevels || [],
       startDate: toDateInput(p.startDate),
       endDate: toDateInput(p.endDate),
-      isActive: !!p.isActive,
+      isActive: !!(p.startDate && p.endDate && new Date(p.startDate) <= new Date() && new Date() <= new Date(p.endDate)),
       targetTermId: p.targetTermId || null,
     };
   }, []);
@@ -454,7 +454,6 @@ export const CoursesProvider = ({ children }) => {
           name: p.name,
           startDate: p.startDate,
           endDate: p.endDate,
-          isActive: p.isActive,
           targetLevels: p.targetLevels,
           targetTermId: p.targetTermId || null,
           updatedBy: p.updatedBy,
@@ -508,7 +507,7 @@ export const CoursesProvider = ({ children }) => {
         const routeId = p._id || p.id;
         return updatePhase(routeId, {
           name: p.name, startDate: p.startDate, endDate: p.endDate,
-          isActive: p.isActive, targetLevels: p.targetLevels,
+          targetLevels: p.targetLevels,
           targetTermId: p.targetTermId || null, updatedBy: p.updatedBy,
         });
       }));

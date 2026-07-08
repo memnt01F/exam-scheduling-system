@@ -42,6 +42,11 @@ const ManagePhasesModal = ({ term, allPhases, onClose, onSave, onInit }) => {
     setLocal(prev => prev.map((p, i) => i === idx ? { ...p, [field]: val } : p));
 
   const handleSave = async () => {
+    const invalid = local.find(p => p.startDate && p.endDate && p.startDate > p.endDate);
+    if (invalid) {
+      toast.error(`${invalid.name}: start date cannot be after end date`);
+      return;
+    }
     setSaving(true);
     await onSave(local);
     setSaving(false);
@@ -78,26 +83,6 @@ const ManagePhasesModal = ({ term, allPhases, onClose, onSave, onInit }) => {
                   <div>
                     <span className="text-sm font-medium">{phase.name}</span>
                     <span className="text-xs text-muted" style={{ marginLeft: 8 }}>{PHASE_LABELS[phase.phaseNumber] || ''}</span>
-                  </div>
-                  {/* Active toggle */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span className="text-xs text-muted">{phase.isActive ? 'Active' : 'Inactive'}</span>
-                    <button
-                      type="button"
-                      onClick={() => update(idx, 'isActive', !phase.isActive)}
-                      style={{
-                        width: 40, height: 22, borderRadius: 11, border: 'none', cursor: 'pointer',
-                        background: phase.isActive ? 'var(--clr-primary)' : 'var(--clr-border)',
-                        position: 'relative', transition: 'background 0.2s',
-                      }}
-                    >
-                      <span style={{
-                        position: 'absolute', top: 3,
-                        left: phase.isActive ? 21 : 3,
-                        width: 16, height: 16, borderRadius: '50%', background: 'white',
-                        transition: 'left 0.2s',
-                      }} />
-                    </button>
                   </div>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
