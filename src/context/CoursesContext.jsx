@@ -1,7 +1,6 @@
 import { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react';
 import { toast } from 'sonner';
 import { coordinatorCourses as initialCourses, generateExamSlots, phases as initialPhases, formatSlotDate as staticFormatSlotDate, weekStartDates as defaultWeekStartDates, blockedDates as defaultBlockedDates, getSlotDate as staticGetSlotDate } from '../lib/mock-data.js';
-import { anchorEligibleCourses } from '../lib/anchor-courses.js';
 import { auditLogs as initialAuditLogs, allUsers as initialUsers, academicTerms as initialTerms } from '../lib/mock-admin-data.js';
 import {
   getBookings, createBooking, getPhases, updatePhase,
@@ -10,7 +9,6 @@ import {
   getCourses, createCourse as createCourseApi, updateCourseApi, deleteCourseApi,
   getAuditLogs, createAuditLog,
   getTerms, createTerm, updateTermApi, deleteTermApi,
-  getAnchors, createAnchor, deleteAnchorApi,
   initPhasesForTerm as initPhasesForTermApi,
 } from '../services/api.js';
 
@@ -72,25 +70,9 @@ function buildExamSlots(weekStarts, blocked) {
 }
 
 export const CoursesProvider = ({ children }) => {
-  // Normalize course code strings to a canonical form used across the UI
   const normalizeCode = (s) => String(s || '').replace(/\s+/g, '').toUpperCase();
-  // Merge coordinator courses with anchor-eligible courses (avoid duplicates by code)
-  const mergedInitialCourses = (() => {
-    const existing = new Set(initialCourses.map(c => c.code.replace(/\s+/g, '')));
-    const anchorCourses = anchorEligibleCourses
-      .filter(ac => !existing.has(ac.code.replace(/\s+/g, '')))
-      .map((ac, idx) => ({
-        id: `anchor-${idx}`,
-        code: ac.code,
-        name: ac.name,
-        level: 1,
-        department: ac.department || 'General Studies',
-        bookings: {},
-      }));
-    return [...initialCourses.map(c => ({ ...c, bookings: { ...c.bookings } })), ...anchorCourses];
-  })();
 
-  const [courses, setCourses] = useState(mergedInitialCourses);
+  const [courses, setCourses] = useState(initialCourses.map(c => ({ ...c, bookings: { ...c.bookings } })));
   const [examSlots, setExamSlots] = useState(generateExamSlots);
   const [phases, setPhases] = useState(initialPhases.map(p => ({ ...p })));
   const [auditLogs, setAuditLogs] = useState([...initialAuditLogs]);
@@ -153,7 +135,6 @@ export const CoursesProvider = ({ children }) => {
     user_deactivated: 'UPDATE_USER',
     user_activated: 'UPDATE_USER',
     user_deleted: 'DELETE_USER',
-    level1_configured: 'CREATE_ANCHOR',
     term_created: 'CREATE_TERM',
     term_activated: 'UPDATE_TERM',
   };
@@ -169,8 +150,6 @@ export const CoursesProvider = ({ children }) => {
     CREATE_COURSE: 'course_created',
     UPDATE_COURSE: 'course_updated',
     DELETE_COURSE: 'course_deleted',
-    CREATE_ANCHOR: 'level1_configured',
-    DELETE_ANCHOR: 'level1_removed',
     CREATE_TERM: 'term_created',
     UPDATE_TERM: 'term_activated',
   };
@@ -577,19 +556,17 @@ export const CoursesProvider = ({ children }) => {
     (async () => {
       setLoading(true);
       try {
-        const [bookings, serverPhases, serverUsers, serverCourses, serverLogs, serverTerms, serverAnchors] = await Promise.all([
+        const [bookings, serverPhases, serverUsers, serverCourses, serverLogs, serverTerms] = await Promise.all([
           getBookings().catch(() => null),
           getPhases().catch(() => null),
           getUsers().catch(() => null),
           getCourses().catch(() => null),
           getAuditLogs().catch(() => null),
           getTerms().catch(() => null),
-          getAnchors().catch(() => null),
         ]);
         if (cancelled) return;
 
-        // If every request failed the backend is offline — keep mock data.
-        const anySucceeded = [bookings, serverPhases, serverUsers, serverCourses, serverLogs, serverTerms, serverAnchors].some(r => r !== null);
+        const anySucceeded = [bookings, serverPhases, serverUsers, serverCourses, serverLogs, serverTerms].some(r => r !== null);
         setBackendOnline(anySucceeded);
 
         if (Array.isArray(serverPhases) && serverPhases.length) {
@@ -620,21 +597,6 @@ export const CoursesProvider = ({ children }) => {
           setAcademicTerms(normalized);
           const active = normalized.find(t => t.isActive && t.calendarData);
           if (active) activateTermCalendar(active.calendarData);
-        }
-        if (Array.isArray(serverAnchors) && serverAnchors.length) {
-          setAnchorSlots(serverAnchors.map((s) => ({
-            id: s._id,
-            _serverId: s._id,
-            termId: s.termId || 'current',
-            courseCode: s.courseCode,
-            courseName: s.courseName,
-            examType: s.examType,
-            week: s.week,
-            date: s.date,
-            bookingStatus: s.bookingStatus || 'booked',
-            updatedBy: s.updatedBy,
-            updatedAt: s.updatedAt || new Date().toISOString(),
-          })));
         }
         if (bookings) applyBookingsFromServer(bookings);
       } catch (err) {
@@ -952,105 +914,6 @@ export const CoursesProvider = ({ children }) => {
     }
   }, [courses, backendOnline, getSlotDate, formatSlotDate, applyBookingsFromServer, addAuditLog]);
 
-  // Anchor slots state — term-specific records created by the committee
-  const [anchorSlots, setAnchorSlots] = useState([]);
-
-  const normalizeServerAnchor = useCallback((s) => ({
-    id: s._id,
-    _serverId: s._id,
-    termId: s.termId || 'current',
-    courseCode: s.courseCode,
-    courseName: s.courseName,
-    examType: s.examType,
-    week: s.week,
-    date: s.date,
-    bookingStatus: s.bookingStatus || 'booked',
-    updatedBy: s.updatedBy,
-    updatedAt: s.updatedAt || new Date().toISOString(),
-  }), []);
-
-  const refreshAnchors = useCallback(async () => {
-    try {
-      const data = await getAnchors();
-      if (Array.isArray(data)) setAnchorSlots(data.map(normalizeServerAnchor));
-      return data;
-    } catch { return null; }
-  }, [normalizeServerAnchor]);
-
-  /**
-   * Persist a committee-fixed anchor slot. Optimistically replaces the local
-   * slot for the same course code, then upserts to the backend.
-   */
-  const addAnchorSlot = useCallback(async (slot) => {
-    const optimistic = {
-      id: `anchor-${Date.now()}`,
-      termId: slot.termId || 'current',
-      courseCode: slot.courseCode,
-      courseName: slot.courseName,
-      examType: slot.examType,
-      week: slot.week,
-      date: slot.date,
-      bookingStatus: 'booked',
-      updatedBy: slot.createdBy || 'Committee',
-      updatedAt: new Date().toISOString(),
-    };
-    // FIX: was filtering by courseCode alone which wiped all exam types for that course.
-    // Now filters by both courseCode AND examType so Major 1 and Major 2 coexist.
-    setAnchorSlots(prev => [
-      ...prev.filter(s => !(s.courseCode === slot.courseCode && s.examType === slot.examType)),
-      optimistic,
-    ]);
-    addAuditLog({
-      action: 'level1_configured',
-      user: slot.createdBy || 'Committee',
-      course: slot.courseCode,
-      details: `Booked ${slot.examType} — Week ${slot.week}, ${slot.date}`,
-      role: 'committee',
-    });
-
-    if (!backendOnline) return { success: true, offline: true };
-    try {
-      const created = await createAnchor({
-        termId: optimistic.termId,
-        courseCode: optimistic.courseCode,
-        courseName: optimistic.courseName,
-        examType: optimistic.examType,
-        week: optimistic.week,
-        date: optimistic.date,
-        updatedBy: optimistic.updatedBy,
-      });
-      // Same fix on server response — only replace the matching examType
-      setAnchorSlots(prev => [
-        ...prev.filter(s => !(s.courseCode === created.courseCode && s.examType === created.examType)),
-        normalizeServerAnchor(created),
-      ]);
-      return { success: true };
-    } catch (err) {
-      console.warn('[anchors] create failed:', err.message);
-      return { success: true, offline: true };
-    }
-  }, [addAuditLog, backendOnline, normalizeServerAnchor]);
-
-  const removeAnchorSlot = useCallback(async (slotId) => {
-    const target = anchorSlots.find(s => s.id === slotId);
-    setAnchorSlots(prev => prev.filter(s => s.id !== slotId));
-    if (!backendOnline || !target?._serverId) return { success: true, offline: !backendOnline };
-    try {
-      await deleteAnchorApi(target._serverId, { deletedBy: 'Committee' });
-      return { success: true };
-    } catch (err) {
-      console.warn('[anchors] delete failed:', err.message);
-      return { success: true, offline: true };
-    }
-  }, [anchorSlots, backendOnline]);
-
-  /**
-   * Check if a course (optionally + examType) is committee-fixed.
-   */
-  const isAnchored = useCallback((courseCode, examType) => {
-    return anchorSlots.some(s => s.courseCode === courseCode && (!examType || s.examType === examType));
-  }, [anchorSlots]);
-
   // ─────────────── Academic terms (backend-backed) ───────────────
 
   const normalizeServerTerm = useCallback((t) => ({
@@ -1177,7 +1040,6 @@ export const CoursesProvider = ({ children }) => {
     rescheduleBooking,
     addAuditLog, refreshAuditLogs,
     refreshBookings, backendOnline, loading,
-    anchorSlots, addAnchorSlot, removeAnchorSlot, refreshAnchors, isAnchored,
   };
 
   return (
@@ -1205,7 +1067,6 @@ export const useCourses = () => {
     deleteUser: async () => ({ success: false }), refreshUsers: async () => null,
     rescheduleBooking: async () => ({ success: false }),
     refreshBookings: async () => null, refreshAuditLogs: async () => null, backendOnline: false, loading: false,
-    anchorSlots: [], addAnchorSlot: async () => ({ success: false }), removeAnchorSlot: async () => ({ success: false }), refreshAnchors: async () => null, isAnchored: () => false,
-  };
+};
   return ctx;
 };

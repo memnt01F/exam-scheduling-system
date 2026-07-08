@@ -156,17 +156,6 @@ export async function deleteTermApi(id, body = {}) {
   return request(`/terms/${id}`, { method: "DELETE", body: JSON.stringify(body) });
 }
 
-/* ──────────────────────────── Anchor slots ──────────────────────────── */
-
-export async function getAnchors() {
-  return request("/anchors");
-}
-export async function createAnchor(payload) {
-  return request("/anchors", { method: "POST", body: JSON.stringify(payload) });
-}
-export async function deleteAnchorApi(id, body = {}) {
-  return request(`/anchors/${id}`, { method: "DELETE", body: JSON.stringify(body) });
-}
 
 /* ──────────────────────────── Phases ──────────────────────────── */
 

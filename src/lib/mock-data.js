@@ -114,7 +114,7 @@ export const phases = [
   {
     id: 'p0',
     name: 'Phase 0',
-    description: 'Pre-configured anchor slots for Level 1 courses',
+    description: 'Phase 0 — Level 1 course scheduling',
     targetLevels: [1],
     startDate: '2026-01-15',
     endDate: '2026-02-01',
