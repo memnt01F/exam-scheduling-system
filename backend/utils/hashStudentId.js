@@ -1,14 +1,16 @@
-const crypto = require('crypto');
+const K = 97;
+const MODULUS = 1_000_000_000; // 10^9
 
 /**
- * Deterministic masking for student IDs using plain SHA-256.
- * Takes the first 8 hex chars of the hash, parses as a 32-bit integer,
- * mods by 10,000,000 → a consistent 7-digit masked ID (e.g. "0482931").
- * No secret required — the same raw ID always produces the same masked ID.
+ * Collision-free masking for 9-digit student IDs.
+ * Formula: (ID × K) mod 10^9
+ * K=97 is coprime with 10^9 (not divisible by 2 or 5), guaranteeing
+ * a bijection over the 9-digit domain — no two IDs produce the same output.
+ * Max product: 999999999 × 97 = 96,999,999,903 — well within JS safe integer range.
  */
 function hashStudentId(rawId) {
-  const hex = crypto.createHash('sha256').update(String(rawId).trim()).digest('hex');
-  return String(parseInt(hex.slice(0, 8), 16) % 10000000).padStart(7, '0');
+  const id = parseInt(String(rawId).trim(), 10);
+  return String((id * K) % MODULUS).padStart(9, '0');
 }
 
 module.exports = { hashStudentId };
