@@ -21,6 +21,7 @@ const userSchema = new mongoose.Schema(
       required: true,
     },
     department: { type: String, default: "" },
+    managedDepartments: { type: [String], default: [] },
     assignedCourses: { type: [String], default: [] },
     status: {
       type: String,

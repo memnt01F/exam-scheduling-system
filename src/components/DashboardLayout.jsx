@@ -7,7 +7,7 @@ const roleNavItems = {
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   ],
   committee: [
-    { href: '/committee', label: 'Committee', icon: Users },
+    { href: '/committee', label: 'Dept. Head', icon: Users },
   ],
   admin: [
     { href: '/admin', label: 'Administration', icon: Settings },
@@ -58,7 +58,7 @@ const DashboardLayout = ({ children }) => {
 
           <div className="header-right">
             <span className="badge badge-secondary" style={{ textTransform: 'capitalize', fontSize: 11 }}>
-              {user?.role || 'guest'}
+              {user?.role === 'committee' ? 'Dept. Head' : user?.role || 'guest'}
             </span>
             <div className="header-user hidden-sm">
               <User size={16} />

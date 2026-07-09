@@ -55,6 +55,7 @@ const UserManagement = () => {
       email: updated.email,
       role: updated.role,
       department: updated.department,
+      managedDepartments: updated.managedDepartments || [],
       assignedCourses: updated.assignedCourses,
       isActive: updated.isActive,
     }, adminName);
@@ -131,7 +132,7 @@ const UserManagement = () => {
     e.target.value = '';
   };
 
-  const roleLabel = (r) => r === 'coordinator' ? 'Coordinator' : r === 'committee' ? 'Committee' : 'Admin';
+  const roleLabel = (r) => ({ coordinator: 'Coordinator', committee: 'Dept. Head', admin: 'Admin' })[r] || r;
 
   return (
     <div className="space-y-4">
@@ -169,7 +170,11 @@ const UserManagement = () => {
                   <td className="font-medium">{u.name}</td>
                   <td className="text-sm text-muted">{u.email}</td>
                   <td><span className="badge badge-outline" style={{ fontSize: 10 }}>{roleLabel(u.role)}</span></td>
-                  <td className="text-sm">{u.department}</td>
+                  <td className="text-sm">
+                    {u.role === 'committee'
+                      ? (u.managedDepartments || []).join(', ') || '—'
+                      : u.department}
+                  </td>
                   <td>
                     <span
                       className={`badge ${u.isActive ? 'badge-primary' : 'badge-outline'}`}
@@ -244,6 +249,7 @@ const EditUserModal = ({ user, departments, onClose, onSave, onDelete }) => {
   const { courses } = useCourses();
   const [form, setForm] = useState({ ...user });
   const [assignedCourseIds, setAssignedCourseIds] = useState([]);
+  const [managedDepts, setManagedDepts] = useState(user.managedDepartments || []);
   const [courseSearch, setCourseSearch] = useState('');
   const set = (key, val) => setForm(prev => ({ ...prev, [key]: val }));
 
@@ -259,6 +265,9 @@ const EditUserModal = ({ user, departments, onClose, onSave, onDelete }) => {
   const toggleCourse = (id) => {
     setAssignedCourseIds(prev => prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]);
   };
+  const toggleDept = (d) => {
+    setManagedDepts(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d]);
+  };
 
   const filteredCourses = courses.filter(c => {
     const q = courseSearch.replace(/\s+/g, '').toLowerCase();
@@ -268,7 +277,12 @@ const EditUserModal = ({ user, departments, onClose, onSave, onDelete }) => {
   const handleSave = () => {
     if (!form.name.trim() || !form.email.trim()) { toast.error('Name and Email are required'); return; }
     if (form.role === 'coordinator' && assignedCourseIds.length === 0) { toast.error('Please assign at least one course'); return; }
-    onSave({ ...form, assignedCourses: form.role === 'coordinator' ? assignedCourseIds : [] });
+    if (form.role === 'committee' && managedDepts.length === 0) { toast.error('Please select at least one managed department'); return; }
+    onSave({
+      ...form,
+      assignedCourses: form.role === 'coordinator' ? assignedCourseIds : [],
+      managedDepartments: form.role === 'committee' ? managedDepts : [],
+    });
   };
 
   return (
@@ -289,9 +303,9 @@ const EditUserModal = ({ user, departments, onClose, onSave, onDelete }) => {
           </div>
           <div>
             <label className="text-sm font-medium">Role</label>
-            <select className="form-input" value={form.role} onChange={e => { set('role', e.target.value); if (e.target.value !== 'coordinator') setAssignedCourseIds([]); }}>
+            <select className="form-input" value={form.role} onChange={e => { set('role', e.target.value); if (e.target.value !== 'coordinator') setAssignedCourseIds([]); if (e.target.value !== 'committee') setManagedDepts([]); }}>
               <option value="coordinator">Coordinator</option>
-              <option value="committee">Committee</option>
+              <option value="committee">Department Head</option>
               <option value="admin">Admin</option>
             </select>
           </div>
@@ -301,6 +315,25 @@ const EditUserModal = ({ user, departments, onClose, onSave, onDelete }) => {
               <select className="form-input" value={form.department} onChange={e => set('department', e.target.value)}>
                 {departments.map(d => <option key={d} value={d}>{d}</option>)}
               </select>
+            </div>
+          )}
+          {form.role === 'committee' && (
+            <div>
+              <label className="text-sm font-medium">Managed Departments</label>
+              <div style={{ border: '1px solid var(--clr-border)', borderRadius: 8, maxHeight: 160, overflowY: 'auto', padding: 4 }}>
+                {departments.map(d => {
+                  const selected = managedDepts.includes(d);
+                  return (
+                    <div key={d} onClick={() => toggleDept(d)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 13, background: selected ? 'var(--clr-primary-light, hsl(215 80% 95%))' : 'transparent' }}>
+                      <span style={{ width: 18, height: 18, borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', border: selected ? 'none' : '1.5px solid var(--clr-border)', background: selected ? 'var(--clr-primary)' : 'transparent', color: '#fff', flexShrink: 0 }}>
+                        {selected && <Check size={12} />}
+                      </span>
+                      {d}
+                    </div>
+                  );
+                })}
+              </div>
+              {managedDepts.length > 0 && <div style={{ fontSize: 12, color: 'var(--clr-muted)', marginTop: 4 }}>{managedDepts.length} department{managedDepts.length !== 1 ? 's' : ''} selected</div>}
             </div>
           )}
           <div>
@@ -382,11 +415,15 @@ const AddUserModal = ({ departments, onClose, onSave, onImport }) => {
   const { courses } = useCourses();
   const [form, setForm] = useState({ name: '', email: '', role: 'coordinator', department: departments[0] || '', isActive: true });
   const [assignedCourseIds, setAssignedCourseIds] = useState([]);
+  const [managedDepts, setManagedDepts] = useState([]);
   const [courseSearch, setCourseSearch] = useState('');
   const set = (key, val) => setForm(prev => ({ ...prev, [key]: val }));
 
   const toggleCourse = (id) => {
     setAssignedCourseIds(prev => prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]);
+  };
+  const toggleDept = (d) => {
+    setManagedDepts(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d]);
   };
 
   const filteredCourses = courses.filter(c => {
@@ -397,7 +434,13 @@ const AddUserModal = ({ departments, onClose, onSave, onImport }) => {
   const handleSave = () => {
     if (!form.name.trim() || !form.email.trim()) { toast.error('Name and Email are required'); return; }
     if (form.role === 'coordinator' && assignedCourseIds.length === 0) { toast.error('Please assign at least one course to the coordinator'); return; }
-    onSave({ ...form, id: `u-${Date.now()}`, assignedCourses: form.role === 'coordinator' ? assignedCourseIds : [] });
+    if (form.role === 'committee' && managedDepts.length === 0) { toast.error('Please select at least one managed department'); return; }
+    onSave({
+      ...form,
+      id: `u-${Date.now()}`,
+      assignedCourses: form.role === 'coordinator' ? assignedCourseIds : [],
+      managedDepartments: form.role === 'committee' ? managedDepts : [],
+    });
   };
 
   return (
@@ -418,9 +461,9 @@ const AddUserModal = ({ departments, onClose, onSave, onImport }) => {
           </div>
           <div>
             <label className="text-sm font-medium">Role</label>
-            <select className="form-input" value={form.role} onChange={e => { set('role', e.target.value); if (e.target.value !== 'coordinator') setAssignedCourseIds([]); }}>
+            <select className="form-input" value={form.role} onChange={e => { set('role', e.target.value); if (e.target.value !== 'coordinator') setAssignedCourseIds([]); if (e.target.value !== 'committee') setManagedDepts([]); }}>
               <option value="coordinator">Coordinator</option>
-              <option value="committee">Committee</option>
+              <option value="committee">Department Head</option>
               <option value="admin">Admin</option>
             </select>
           </div>
@@ -430,6 +473,25 @@ const AddUserModal = ({ departments, onClose, onSave, onImport }) => {
               <select className="form-input" value={form.department} onChange={e => set('department', e.target.value)}>
                 {departments.map(d => <option key={d} value={d}>{d}</option>)}
               </select>
+            </div>
+          )}
+          {form.role === 'committee' && (
+            <div>
+              <label className="text-sm font-medium">Managed Departments</label>
+              <div style={{ border: '1px solid var(--clr-border)', borderRadius: 8, maxHeight: 160, overflowY: 'auto', padding: 4 }}>
+                {departments.map(d => {
+                  const selected = managedDepts.includes(d);
+                  return (
+                    <div key={d} onClick={() => toggleDept(d)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 13, background: selected ? 'var(--clr-primary-light, hsl(215 80% 95%))' : 'transparent' }}>
+                      <span style={{ width: 18, height: 18, borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', border: selected ? 'none' : '1.5px solid var(--clr-border)', background: selected ? 'var(--clr-primary)' : 'transparent', color: '#fff', flexShrink: 0 }}>
+                        {selected && <Check size={12} />}
+                      </span>
+                      {d}
+                    </div>
+                  );
+                })}
+              </div>
+              {managedDepts.length > 0 && <div style={{ fontSize: 12, color: 'var(--clr-muted)', marginTop: 4 }}>{managedDepts.length} department{managedDepts.length !== 1 ? 's' : ''} selected</div>}
             </div>
           )}
           <div>

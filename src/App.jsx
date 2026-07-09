@@ -7,8 +7,8 @@ import Login from "./pages/Login.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
 import BookingPage from "./pages/BookingPage.jsx";
 import PreferencesPage from "./pages/PreferencesPage.jsx";
-import CommitteeDashboard from "./pages/CommitteeDashboard.jsx";
 import AdminDashboard from "./pages/AdminDashboard.jsx";
+import DepartmentHeadDashboard from "./pages/DepartmentHeadDashboard.jsx";
 import NotFound from "./pages/NotFound.jsx";
 
 class ErrorBoundary extends Component {
@@ -93,7 +93,7 @@ const App = () => (
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/booking/:courseId" element={<BookingPage />} />
               <Route path="/preferences/:courseCode" element={<PreferencesPage />} />
-              <Route path="/committee" element={<CommitteeDashboard />} />
+              <Route path="/committee" element={<DepartmentHeadDashboard />} />
               <Route path="/admin" element={<AdminDashboard />} />
               <Route path="*" element={<NotFound />} />
             </Routes>

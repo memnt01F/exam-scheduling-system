@@ -529,6 +529,7 @@ export const CoursesProvider = ({ children }) => {
     role: u.role,
     department: u.department || '',
     assignedCourses: Array.isArray(u.assignedCourses) ? Array.from(new Set(u.assignedCourses.map((c) => normalizeCode(c)))) : [],
+    managedDepartments: Array.isArray(u.managedDepartments) ? u.managedDepartments : [],
     isActive: u.status !== 'inactive',
   }), []);
 
@@ -771,6 +772,7 @@ export const CoursesProvider = ({ children }) => {
         email: user.email,
         role: user.role,
         department: user.department || '',
+        managedDepartments: Array.isArray(user.managedDepartments) ? user.managedDepartments : [],
         assignedCourses: mappedAssigned,
         status: user.isActive === false ? 'inactive' : 'active',
         createdBy: createdBy || 'admin',

@@ -16,7 +16,7 @@ const STATUS_CONFIG = {
   scheduled:   { icon: CheckCircle2, label: 'Scheduled',   color: 'var(--clr-primary)' },
 };
 
-const AdminPreferencesView = ({ phaseNum, termId, phase, term, onBack }) => {
+const AdminPreferencesView = ({ phaseNum, termId, phase, term, onBack, restrictedDepts }) => {
   const { user } = useAuth();
   const { courses, users, effectiveWeekStartDates, backendOnline } = useCourses();
 
@@ -43,9 +43,9 @@ const AdminPreferencesView = ({ phaseNum, termId, phase, term, onBack }) => {
   /* phase courses sorted alphabetically */
   const phaseCourses = useMemo(() =>
     courses
-      .filter(c => Number(c.level) === targetLevel)
+      .filter(c => Number(c.level) === targetLevel && (!restrictedDepts?.length || restrictedDepts.includes(c.department)))
       .sort((a, b) => String(a.code).localeCompare(String(b.code))),
-    [courses, targetLevel]
+    [courses, targetLevel, restrictedDepts]
   );
 
   /* build rows: course + coordinator + matched preference */
@@ -189,13 +189,15 @@ const AdminPreferencesView = ({ phaseNum, termId, phase, term, onBack }) => {
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <button
-          className="btn btn-outline btn-sm"
-          onClick={onBack}
-          style={{ padding: '4px 10px', flexShrink: 0 }}
-        >
-          <ArrowLeft size={14} />
-        </button>
+        {onBack && (
+          <button
+            className="btn btn-outline btn-sm"
+            onClick={onBack}
+            style={{ padding: '4px 10px', flexShrink: 0 }}
+          >
+            <ArrowLeft size={14} />
+          </button>
+        )}
         <div>
           <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>
             {phase?.name || `Phase ${phaseNum}`} — All Preferences
@@ -236,15 +238,17 @@ const AdminPreferencesView = ({ phaseNum, termId, phase, term, onBack }) => {
             style={{ paddingLeft: 32, height: 34, fontSize: 13 }}
           />
         </div>
-        <select
-          className="form-input"
-          value={deptFilter}
-          onChange={e => setDeptFilter(e.target.value)}
-          style={{ width: 'auto', minWidth: 160, height: 34, fontSize: 13 }}
-        >
-          <option value="">All Departments</option>
-          {depts.map(d => <option key={d} value={d}>{d}</option>)}
-        </select>
+        {!restrictedDepts?.length && (
+          <select
+            className="form-input"
+            value={deptFilter}
+            onChange={e => setDeptFilter(e.target.value)}
+            style={{ width: 'auto', minWidth: 160, height: 34, fontSize: 13 }}
+          >
+            <option value="">All Departments</option>
+            {depts.map(d => <option key={d} value={d}>{d}</option>)}
+          </select>
+        )}
       </div>
 
       {/* Table */}

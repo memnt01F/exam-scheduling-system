@@ -74,6 +74,7 @@ router.post("/login", async (req, res) => {
         email: user.email,
         role: user.role,
         department: user.department,
+        managedDepartments: user.managedDepartments || [],
         assignedCourses: user.assignedCourses,
       },
     });
@@ -100,7 +101,7 @@ router.get("/", async (_req, res) => {
  */
 router.post("/", async (req, res) => {
   try {
-    const { name, email, role, department, assignedCourses, status, createdBy } = req.body || {};
+    const { name, email, role, department, managedDepartments, assignedCourses, status, createdBy } = req.body || {};
     if (!name || !email || !role) {
       return res.status(400).json({ message: "name, email, and role are required" });
     }
@@ -118,6 +119,7 @@ router.post("/", async (req, res) => {
       password: hashedPassword,
       role,
       department: department || "",
+      managedDepartments: Array.isArray(managedDepartments) ? managedDepartments : [],
       assignedCourses: Array.isArray(assignedCourses) ? assignedCourses : [],
       status: status || "active",
       createdBy: createdBy || "admin",
@@ -139,7 +141,7 @@ router.post("/", async (req, res) => {
 /** PUT /api/users/:id */
 router.put("/:id", async (req, res) => {
   try {
-    const allowed = ["name", "email", "role", "department", "assignedCourses", "status"];
+    const allowed = ["name", "email", "role", "department", "managedDepartments", "assignedCourses", "status"];
     const update = {};
     for (const k of allowed) if (k in req.body) update[k] = req.body[k];
 
