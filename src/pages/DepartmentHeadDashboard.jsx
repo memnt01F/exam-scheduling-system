@@ -1,10 +1,10 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import DashboardLayout from '../components/DashboardLayout.jsx';
 import SchedulingManagement from '../components/admin/SchedulingManagement.jsx';
 import { useCourses } from '../context/CoursesContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { getBookings, createBooking, updateBooking, deleteBooking } from '../services/api.js';
-import { BookOpen, BarChart2, Search, AlertTriangle, Users, CalendarDays, Plus, Pencil, X, Trash2 } from 'lucide-react';
+import { BookOpen, BarChart2, Search, AlertTriangle, Users, CalendarDays, Plus, Pencil, X, Trash2, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 
 const EXAM_TYPES = ['Major 1', 'Major 2', 'Major 3', 'Mid'];
@@ -15,6 +15,77 @@ const tabs = [
   { id: 'preferences', label: 'Schedule Management', icon: BarChart2 },
   { id: 'bookings',    label: 'Bookings',            icon: CalendarDays },
 ];
+
+/* ── Searchable Select ── */
+const SearchableSelect = ({ value, onChange, options, placeholder = '— Unassigned —' }) => {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) { setOpen(false); setSearch(''); }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const selected = options.find(o => o.value === value);
+  const filtered = options.filter(o => !search || o.label.toLowerCase().includes(search.toLowerCase()));
+
+  return (
+    <div ref={ref} style={{ position: 'relative', minWidth: 180 }}>
+      <button
+        type="button"
+        className="form-input"
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', textAlign: 'left', width: '100%' }}
+        onClick={() => { setOpen(o => !o); setSearch(''); }}
+      >
+        <span style={{ color: selected ? 'inherit' : 'var(--clr-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {selected ? selected.label : placeholder}
+        </span>
+        <ChevronDown size={14} style={{ flexShrink: 0, marginLeft: 4 }} />
+      </button>
+      {open && (
+        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 200, background: 'var(--clr-card)', border: '1px solid var(--clr-border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', marginTop: 2 }}>
+          <div style={{ padding: '6px 8px', borderBottom: '1px solid var(--clr-border)' }}>
+            <input
+              className="form-input"
+              style={{ padding: '4px 8px', fontSize: 13 }}
+              placeholder="Search…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              autoFocus
+              onClick={e => e.stopPropagation()}
+            />
+          </div>
+          <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+            <div
+              style={{ padding: '6px 12px', fontSize: 13, cursor: 'pointer', color: 'var(--clr-muted)' }}
+              onClick={() => { onChange(''); setOpen(false); setSearch(''); }}
+            >
+              — Unassigned —
+            </div>
+            {filtered.map(o => (
+              <div
+                key={o.value}
+                style={{ padding: '6px 12px', fontSize: 13, cursor: 'pointer', background: o.value === value ? 'var(--clr-primary-light, hsl(215 80% 95%))' : 'transparent', color: o.value === value ? 'var(--clr-primary)' : 'inherit' }}
+                onMouseEnter={e => { if (o.value !== value) e.currentTarget.style.background = 'var(--clr-hover, hsl(0 0% 96%))'; }}
+                onMouseLeave={e => { if (o.value !== value) e.currentTarget.style.background = 'transparent'; }}
+                onClick={() => { onChange(o.value); setOpen(false); setSearch(''); }}
+              >
+                {o.label}
+              </div>
+            ))}
+            {filtered.length === 0 && (
+              <div style={{ padding: '8px 12px', fontSize: 13, color: 'var(--clr-muted)', textAlign: 'center' }}>No match</div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 /* ── Assignments tab ── */
 const PAGE_SIZE = 25;
@@ -88,17 +159,11 @@ const AssignmentsTab = ({ deptCourses, coordinators, assignments, setAssignments
                     <td className="text-sm">{c.level}</td>
                     <td className="text-sm">{c.department}</td>
                     <td>
-                      <select
-                        className="form-input"
-                        style={{ minWidth: 180 }}
+                      <SearchableSelect
                         value={assignments[c.code] || ''}
-                        onChange={e => setAssignments(prev => ({ ...prev, [c.code]: e.target.value }))}
-                      >
-                        <option value="">— Unassigned —</option>
-                        {coordinators.map(coord => (
-                          <option key={coord.id} value={coord.id}>{coord.name}</option>
-                        ))}
-                      </select>
+                        onChange={val => setAssignments(prev => ({ ...prev, [c.code]: val }))}
+                        options={coordinators.map(coord => ({ value: coord.id, label: coord.name }))}
+                      />
                     </td>
                   </tr>
                 ))}
