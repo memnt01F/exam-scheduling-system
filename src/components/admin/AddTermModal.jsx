@@ -40,8 +40,10 @@ const AddTermModal = ({ onClose, onSave, term = null }) => {
   });
   const [newIcsUploaded, setNewIcsUploaded] = useState(false);
   const [editingBlockedIdx, setEditingBlockedIdx] = useState(null);
-  const [newBlockedDate, setNewBlockedDate] = useState('');
-  const [newBlockedReason, setNewBlockedReason] = useState('');
+  const [newFromDate, setNewFromDate] = useState('');
+  const [newToDate, setNewToDate] = useState('');
+  const [newEventReason, setNewEventReason] = useState('');
+  const [newIsBlocked, setNewIsBlocked] = useState(true);
 
   /* ── File upload ── */
   const handleFileUpload = (e) => {
@@ -105,13 +107,29 @@ const AddTermModal = ({ onClose, onSave, term = null }) => {
     });
   };
 
-  const addManualBlockedDate = () => {
-    if (!newBlockedDate) { toast.error('Please select a date'); return; }
-    const reason = newBlockedReason.trim() || 'Blocked';
-    setIcsData(prev => ({ ...prev, blockedDates: { ...prev.blockedDates, [newBlockedDate]: reason } }));
-    setNewBlockedDate('');
-    setNewBlockedReason('');
-    toast.success('Blocked date added');
+  const addManualEvent = () => {
+    if (!newFromDate) { toast.error('Please select a start date'); return; }
+    const endDate = newToDate || newFromDate;
+    if (newToDate && newToDate < newFromDate) { toast.error('End date must be on or after start date'); return; }
+    const reason = newEventReason.trim() || (newIsBlocked ? 'Blocked' : 'University Event');
+    const newEvent = {
+      id: `manual-${Date.now()}`,
+      summary: reason,
+      startDate: newFromDate,
+      endDate,
+      isBlocked: newIsBlocked,
+      blockReason: newIsBlocked ? reason : '',
+    };
+    setIcsData(prev => {
+      const events = [...prev.events, newEvent];
+      const blockedDates = rebuildBlockedDates(events, prev.blockedDates);
+      return { ...prev, events, blockedDates };
+    });
+    setNewFromDate('');
+    setNewToDate('');
+    setNewEventReason('');
+    setNewIsBlocked(true);
+    toast.success(newIsBlocked ? 'Blocked date added' : 'Event added to calendar');
   };
 
   const removeBlockedDate = (dateStr) => {
@@ -321,7 +339,7 @@ const AddTermModal = ({ onClose, onSave, term = null }) => {
 
             {/* Events table */}
             <div>
-              <h4 className="text-sm font-semibold mb-2">Imported Events ({eventCount})</h4>
+              <h4 className="text-sm font-semibold mb-2">Calendar Events ({eventCount})</h4>
               <div style={{ maxHeight: 220, overflow: 'auto', border: '1px solid var(--clr-border)', borderRadius: 'var(--radius)' }}>
                 <table className="data-table" style={{ fontSize: 12 }}>
                   <thead>
@@ -394,17 +412,31 @@ const AddTermModal = ({ onClose, onSave, term = null }) => {
                 </table>
               </div>
 
-              {/* Add manual blocked date */}
-              <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'flex-end' }}>
-                <div style={{ flex: 1 }}>
-                  <label className="text-xs text-muted">Date</label>
-                  <input className="form-input" type="date" value={newBlockedDate} onChange={e => setNewBlockedDate(e.target.value)} style={{ height: 32, fontSize: 12 }} />
+              {/* Add manual event */}
+              <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                <div>
+                  <label className="text-xs text-muted">From</label>
+                  <input className="form-input" type="date" value={newFromDate} onChange={e => setNewFromDate(e.target.value)} style={{ height: 32, fontSize: 12, width: 140 }} />
                 </div>
-                <div style={{ flex: 2 }}>
+                <div>
+                  <label className="text-xs text-muted">To (optional)</label>
+                  <input className="form-input" type="date" value={newToDate} min={newFromDate || undefined} onChange={e => setNewToDate(e.target.value)} style={{ height: 32, fontSize: 12, width: 140 }} />
+                </div>
+                <div style={{ flex: 1, minWidth: 140 }}>
                   <label className="text-xs text-muted">Reason</label>
-                  <input className="form-input" value={newBlockedReason} onChange={e => setNewBlockedReason(e.target.value)} placeholder="e.g. University Holiday" style={{ height: 32, fontSize: 12 }} />
+                  <input className="form-input" value={newEventReason} onChange={e => setNewEventReason(e.target.value)} placeholder="e.g. University Holiday" style={{ height: 32, fontSize: 12 }} />
                 </div>
-                <button className="btn btn-outline btn-sm" onClick={addManualBlockedDate} style={{ height: 32 }}>
+                <div>
+                  <label className="text-xs text-muted">Blocked?</label>
+                  <button
+                    className={`btn btn-sm ${newIsBlocked ? 'btn-primary' : 'btn-outline'}`}
+                    style={{ height: 32, fontSize: 12, display: 'block', width: '100%' }}
+                    onClick={() => setNewIsBlocked(v => !v)}
+                  >
+                    {newIsBlocked ? 'Yes' : 'No'}
+                  </button>
+                </div>
+                <button className="btn btn-outline btn-sm" onClick={addManualEvent} style={{ height: 32 }}>
                   <Plus size={12} /> Add
                 </button>
               </div>
@@ -441,17 +473,19 @@ const AddTermModal = ({ onClose, onSave, term = null }) => {
 
 function rebuildBlockedDates(events, existingBlockedDates) {
   const blockedDates = {};
+  // First pass: dates from currently-blocked events
   for (const ev of events) {
     if (!ev.isBlocked) continue;
     const dates = expandDateRange(ev.startDate, ev.endDate);
     for (const d of dates) blockedDates[d] = ev.blockReason || ev.summary;
   }
-  // Preserve manually added dates that aren't covered by any event
+  // Build the full set of dates owned by ANY event (blocked or not)
+  const allEventDates = new Set(
+    events.flatMap(ev => expandDateRange(ev.startDate, ev.endDate))
+  );
+  // Preserve only truly manual blocked dates (not owned by any event)
   for (const [d, reason] of Object.entries(existingBlockedDates)) {
-    const isFromEvent = events.some(
-      ev => ev.isBlocked && expandDateRange(ev.startDate, ev.endDate).includes(d)
-    );
-    if (!isFromEvent && !blockedDates[d]) blockedDates[d] = reason;
+    if (!allEventDates.has(d) && !blockedDates[d]) blockedDates[d] = reason;
   }
   return blockedDates;
 }

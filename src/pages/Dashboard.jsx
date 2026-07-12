@@ -4,12 +4,13 @@ import { useAuth } from '../context/AuthContext.jsx';
 import DashboardLayout from '../components/DashboardLayout.jsx';
 import { useCourses } from '../context/CoursesContext.jsx';
 import { getRequiredExamTypes, getCourseBookingStatus } from '../lib/mock-data.js';
-import { getPreferences } from '../services/api.js';
+import { getPreferences, getScheduledExams } from '../services/api.js';
 import {
   Clock, CheckCircle2, AlertCircle, ArrowRight, BookOpen, CalendarDays, Lock,
   ChevronDown, ChevronUp, Users, Circle,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import AdminScheduleCalendar from '../components/admin/AdminScheduleCalendar.jsx';
 
 const levelBadgeClass = {
   1: 'badge-level-1', 2: 'badge-level-2', 3: 'badge-level-3', 4: 'badge-level-4',
@@ -228,10 +229,13 @@ const CourseRow = ({ course, isPhaseActive, isPhaseClosed, isPhaseUpcoming, onBo
 /* ── Dashboard ── */
 const Dashboard = () => {
   const navigate = useNavigate();
-  const { courses, phases, formatSlotDate, refreshBookings, backendOnline } = useCourses();
+  const { courses, phases, formatSlotDate, refreshBookings, backendOnline, academicTerms } = useCourses();
   const { user } = useAuth();
   const now = new Date();
   const [preferenceMap, setPreferenceMap] = useState({});
+  const [showScheduleCalendar, setShowScheduleCalendar] = useState(false);
+  const [scheduleExams, setScheduleExams] = useState([]);
+  const [calendarTerm, setCalendarTerm] = useState(null);
 
   useEffect(() => { refreshBookings(); }, [refreshBookings]);
 
@@ -308,12 +312,54 @@ const Dashboard = () => {
     return { isPhaseActive, isPhaseClosed, isPhaseUpcoming };
   };
 
+  const openScheduleCalendar = async () => {
+    const phase = phases.find(p => p.targetTermId);
+    const termId = activePhase?.targetTermId || phase?.targetTermId;
+    if (!termId) { toast.error('No active term found'); return; }
+    const term = academicTerms?.find(t => String(t._serverId || t.id) === String(termId)) || { _id: termId };
+    try {
+      const data = await getScheduledExams({ termId, phase: 0 });
+      const confirmed = Array.isArray(data) ? data.filter(e => e.confirmedAt) : [];
+      setScheduleExams(confirmed);
+    } catch {
+      setScheduleExams([]);
+    }
+    setCalendarTerm(term);
+    setShowScheduleCalendar(true);
+  };
+
+  if (showScheduleCalendar && calendarTerm) {
+    return (
+      <DashboardLayout>
+        <AdminScheduleCalendar
+          exams={scheduleExams}
+          termId={calendarTerm._serverId || calendarTerm.id || calendarTerm._id}
+          phaseNumber={0}
+          term={calendarTerm}
+          readOnly
+          onBack={() => setShowScheduleCalendar(false)}
+        />
+      </DashboardLayout>
+    );
+  }
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold">Coordinator Dashboard</h1>
-          <p className="text-sm text-muted mt-1">Manage your exam scheduling across assigned courses</p>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <h1 className="text-2xl font-bold">Coordinator Dashboard</h1>
+            <p className="text-sm text-muted mt-1">Manage your exam scheduling across assigned courses</p>
+          </div>
+          {(activePhase || phases.some(p => p.targetTermId)) && (
+            <button
+              className="btn btn-outline btn-sm"
+              onClick={openScheduleCalendar}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}
+            >
+              <CalendarDays size={14} /> View Exam Schedule
+            </button>
+          )}
         </div>
 
         {activePhase ? (

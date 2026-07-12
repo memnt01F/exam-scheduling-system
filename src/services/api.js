@@ -247,6 +247,36 @@ export async function uploadEnrollments(termId, file, importedBy = 'admin') {
   return data;
 }
 
+/* ──────────────────────────── Scheduled Exams ──────────────────────────── */
+
+/** GET /api/bookings?phaseNumber=&termId= — algorithm exams for a term + phase */
+export async function getScheduledExams({ termId, phase } = {}) {
+  const qs = new URLSearchParams();
+  if (termId !== undefined) qs.set('termId', termId);
+  if (phase !== undefined) qs.set('phaseNumber', phase);
+  return request(`/bookings${qs.toString() ? `?${qs}` : ''}`);
+}
+
+/** PUT /api/bookings/:id — update date/room on an algorithm exam */
+export async function updateScheduledExam(id, payload) {
+  return request(`/bookings/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+}
+
+/** DELETE /api/bookings/:id — soft-cancel an algorithm exam */
+export async function deleteScheduledExam(id) {
+  return request(`/bookings/${id}`, { method: 'DELETE' });
+}
+
+/** POST /api/bookings/confirm — confirm all algorithm exams for a term + phase */
+export async function confirmSchedule(payload) {
+  return request('/bookings/confirm', { method: 'POST', body: JSON.stringify(payload) });
+}
+
+/** POST /api/bookings/bulk — bulk-insert algorithm exams (cancels previous for same term+phase) */
+export async function createScheduledExamsBulk(payload) {
+  return request('/bookings/bulk', { method: 'POST', body: JSON.stringify(payload) });
+}
+
 /* ──────────────────────────── Course Offerings ──────────────────────────── */
 
 /**

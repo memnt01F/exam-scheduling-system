@@ -1,28 +1,48 @@
 /**
- * Booking routes — GET, POST, PUT, DELETE.
+ * Booking routes — GET, POST, PUT, DELETE + algorithm routes.
  *
- * Fixes applied:
- * - GET: filters to only pending/approved bookings
- * - POST: proper create (not upsert), duplicate guard, status filter on conflict check, examType validation
- * - PUT: status filter on conflict check, duplicate guard checks courseCode+examType not just courseCode
- * - DELETE: soft-cancel (status="cancelled") instead of hard delete
+ * Phase 2 manual bookings: phaseNumber is null (or unset on legacy docs).
+ * Algorithm-generated exams (Phase 0/1): phaseNumber is 0 or 1, termId is set.
+ *
+ * GET  /            — list bookings (see query params below)
+ * POST /check-conflict — preview conflicts without creating
+ * POST /confirm     — confirm all algorithm exams for a term+phase
+ * POST /bulk        — bulk-insert algorithm exams (replaces previous for that term+phase)
+ * POST /            — create a Phase 2 manual booking
+ * PUT  /:id         — edit a booking (algorithm or Phase 2, with appropriate validation)
+ * DELETE /:id       — soft-cancel
  */
 const express = require("express");
 const Booking = require("../models/booking.model");
+const CoursePreference = require("../models/coursePreference.model");
 const AuditLog = require("../models/auditLog.model");
+const AcademicTerm = require("../models/academicTerm.model");
 const { hasSameDayStudentConflict, normalizeCourseCode, parseDateToUtcDayBounds } = require("../services/conflictService");
 
 const router = express.Router();
 
-const VALID_EXAM_TYPES = ["Major 1", "Major 2", "Mid"];
+const VALID_EXAM_TYPES = ["Major 1", "Major 2", "Major 3", "Mid"];
 const examMode = (t) => (t === "Mid" ? "mid" : "major");
 
-/** GET /api/bookings — list active bookings (pending + approved) ordered by exam date. */
-router.get("/", async (_req, res) => {
+/**
+ * GET /api/bookings
+ * - No params: Phase 2 manual bookings only (phaseNumber is null/unset)
+ * - ?phaseNumber=0&termId=xxx: algorithm exams for that phase + term
+ */
+router.get("/", async (req, res) => {
   try {
-    const bookings = await Booking.find({
-      status: { $in: ["pending", "approved"] },
-    }).sort({ examDate: 1 });
+    const { termId, phaseNumber } = req.query;
+    const query = { status: { $in: ["pending", "approved"] } };
+
+    if (phaseNumber !== undefined) {
+      query.phaseNumber = Number(phaseNumber);
+      if (termId) query.termId = termId;
+    } else {
+      // Phase 2 manual bookings: phaseNumber is null or field absent on legacy docs
+      query.phaseNumber = null;
+    }
+
+    const bookings = await Booking.find(query).sort({ examDate: 1 });
     res.json(bookings);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -45,7 +65,6 @@ router.post("/check-conflict", async (req, res) => {
       excludeBookingId,
     });
 
-    // Keep response minimal for UX speed.
     res.json({ hasConflict });
   } catch (err) {
     if (err?.code === "INVALID_EXAM_DATE") {
@@ -55,7 +74,77 @@ router.post("/check-conflict", async (req, res) => {
   }
 });
 
-/** POST /api/bookings — create a booking. */
+/**
+ * POST /api/bookings/confirm — confirm all algorithm exams for a term + phase.
+ * Sets confirmedAt / confirmedBy on matched bookings and flips CoursePreference status → 'scheduled'.
+ */
+router.post("/confirm", async (req, res) => {
+  try {
+    const { termId, phaseNumber, confirmedBy } = req.body || {};
+    if (!termId || phaseNumber === undefined || phaseNumber === null) {
+      return res.status(400).json({ message: "termId and phaseNumber are required" });
+    }
+    const phaseNum = Number(phaseNumber);
+    const now = new Date();
+
+    const result = await Booking.updateMany(
+      { termId, phaseNumber: phaseNum, status: { $in: ["pending", "approved"] } },
+      { $set: { confirmedAt: now, confirmedBy: confirmedBy || "admin", status: "approved" } }
+    );
+
+    // Flip matching CoursePreference records to 'scheduled'
+    const confirmed = await Booking.find({ termId, phaseNumber: phaseNum }).select("courseCode");
+    const courseCodes = [...new Set(confirmed.map((b) => b.courseCode))];
+    if (courseCodes.length > 0) {
+      await CoursePreference.updateMany(
+        { termId, courseCode: { $in: courseCodes } },
+        { $set: { status: "scheduled" } }
+      );
+    }
+
+    res.json({ confirmed: result.modifiedCount });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+/**
+ * POST /api/bookings/bulk — bulk-insert algorithm-generated exams.
+ * Cancels any existing algorithm exams for the same term + phase before inserting.
+ * Body: { termId, phaseNumber, exams: [{ courseCode, examType, examDate, room? }] }
+ */
+router.post("/bulk", async (req, res) => {
+  try {
+    const { termId, phaseNumber, exams } = req.body || {};
+    if (!termId || phaseNumber === undefined || !Array.isArray(exams)) {
+      return res.status(400).json({ message: "termId, phaseNumber, and exams array are required" });
+    }
+    const phaseNum = Number(phaseNumber);
+
+    // Soft-cancel previous algorithm exams for this term + phase (Regenerate flow)
+    await Booking.updateMany(
+      { termId, phaseNumber: phaseNum },
+      { $set: { status: "cancelled" } }
+    );
+
+    const docs = exams.map((e) => ({
+      courseCode: normalizeCourseCode(e.courseCode),
+      examType: e.examType || "Major 1",
+      examDate: parseDateToUtcDayBounds(e.examDate).startOfDayUtc,
+      phaseNumber: phaseNum,
+      termId,
+      room: e.room || "",
+      status: "pending",
+    }));
+
+    const created = await Booking.insertMany(docs);
+    res.status(201).json(created);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+/** POST /api/bookings — create a Phase 2 manual booking. */
 router.post("/", async (req, res) => {
   try {
     const {
@@ -82,17 +171,18 @@ router.post("/", async (req, res) => {
     const { startOfDayUtc } = parseDateToUtcDayBounds(examDate);
     const date = startOfDayUtc;
 
-    // If a booking exists for (courseCode, examType) but was previously cancelled/rejected,
-    // reuse it instead of inserting a new document (unique index would throw E11000).
+    // If a Phase 2 booking exists for (courseCode, examType) but was previously cancelled/rejected,
+    // reuse it instead of inserting a new document.
     const existingAnyStatus = await Booking.findOne({
       courseCode: normalized,
       examType: type,
+      phaseNumber: null,
     });
 
-    // Enforce Mid ↔ Major exclusivity at the API layer.
-    // Major 1 and Major 2 are allowed to coexist (independent bookings).
+    // Enforce Mid ↔ Major exclusivity for Phase 2 bookings.
     const activeForCourse = await Booking.find({
       courseCode: normalized,
+      phaseNumber: null,
       status: { $in: ["pending", "approved"] },
     }).select("examType");
     const requestedMode = examMode(type);
@@ -104,10 +194,11 @@ router.post("/", async (req, res) => {
       });
     }
 
-    // Duplicate guard: same course + same type already active.
+    // Duplicate guard: same course + same type already active (Phase 2 only).
     const duplicate = await Booking.findOne({
       courseCode: normalized,
       examType: type,
+      phaseNumber: null,
       status: { $in: ["pending", "approved"] },
     });
     if (duplicate) {
@@ -116,7 +207,7 @@ router.post("/", async (req, res) => {
       });
     }
 
-    // Same-day student conflict check — enforced in backend (stop on first match).
+    // Same-day student conflict check (checks ALL active bookings, including algorithm exams).
     const hasConflict = await hasSameDayStudentConflict({
       courseCode: normalized,
       examDate: date,
@@ -135,7 +226,7 @@ router.post("/", async (req, res) => {
       });
     }
 
-    // Re-activate a previously cancelled/rejected booking doc for this (courseCode, examType).
+    // Re-activate a previously cancelled/rejected Phase 2 booking.
     if (existingAnyStatus && ["cancelled", "rejected"].includes(existingAnyStatus.status)) {
       existingAnyStatus.examDate = date;
       existingAnyStatus.level = level;
@@ -168,6 +259,7 @@ router.post("/", async (req, res) => {
       createdBy,
       notes,
       status: "pending",
+      phaseNumber: null,
     });
 
     await AuditLog.create({
@@ -191,13 +283,48 @@ router.post("/", async (req, res) => {
 });
 
 /**
- * PUT /api/bookings/:id — reschedule / edit an existing booking.
+ * PUT /api/bookings/:id — edit a booking.
+ * - Algorithm exams (phaseNumber 0/1): update examDate + room only, with conflict check.
+ * - Phase 2 manual bookings: full reschedule logic with duplicate guard + mode switching.
  */
 router.put("/:id", async (req, res) => {
   try {
     const existing = await Booking.findById(req.params.id);
     if (!existing) return res.status(404).json({ message: "Booking not found" });
 
+    // ── Algorithm exam branch ──
+    if (existing.phaseNumber !== null && existing.phaseNumber !== undefined) {
+      const newExamDate = req.body.examDate
+        ? parseDateToUtcDayBounds(req.body.examDate).startOfDayUtc
+        : existing.examDate;
+
+      // Check blocked dates from the term's calendarData
+      if (req.body.examDate && existing.termId) {
+        const termDoc = await AcademicTerm.findById(existing.termId).select("calendarData");
+        const blockedDates = termDoc?.calendarData?.blockedDates || {};
+        const dateKey = newExamDate.toISOString().slice(0, 10);
+        if (blockedDates[dateKey]) {
+          return res.status(409).json({ message: `Cannot schedule on a blocked date: ${blockedDates[dateKey]}` });
+        }
+      }
+
+      const hasConflict = await hasSameDayStudentConflict({
+        courseCode: existing.courseCode,
+        examDate: newExamDate,
+        excludeBookingId: existing._id,
+      });
+      if (hasConflict) {
+        return res.status(409).json({ message: "Booking conflict detected", hasConflict: true });
+      }
+
+      existing.examDate = newExamDate;
+      if (req.body.room !== undefined) existing.room = req.body.room;
+      if (req.body.updatedBy) existing.updatedBy = req.body.updatedBy;
+      await existing.save();
+      return res.json(existing);
+    }
+
+    // ── Phase 2 manual booking branch ──
     const courseCode = req.body.courseCode
       ? normalizeCourseCode(req.body.courseCode)
       : existing.courseCode;
@@ -221,11 +348,12 @@ router.put("/:id", async (req, res) => {
       return res.status(400).json({ message: "courseCode, examDate, and level are required" });
     }
 
-    // Duplicate guard — same course + same type, excluding this booking.
+    // Duplicate guard — same course + same type (Phase 2 only), excluding this booking.
     const otherForCourse = await Booking.findOne({
       _id: { $ne: existing._id },
       courseCode,
       examType,
+      phaseNumber: null,
       status: { $in: ["pending", "approved"] },
     }).select("_id");
     if (otherForCourse) {
@@ -234,7 +362,7 @@ router.put("/:id", async (req, res) => {
       });
     }
 
-    // Same-day student conflict check — enforced in backend (stop on first match), excludes self.
+    // Same-day conflict check (includes algorithm exams on the same day).
     const hasConflict = await hasSameDayStudentConflict({
       courseCode,
       examDate,
@@ -256,8 +384,7 @@ router.put("/:id", async (req, res) => {
 
     const oldSnapshot = { examType: existing.examType, examDate: existing.examDate };
 
-    // If switching modes, cancel any other active bookings for this course
-    // in the opposite mode. Do NOT cancel when switching Major 1 ↔ Major 2.
+    // Cancel opposite-mode Phase 2 bookings if switching Mid ↔ Major.
     const oldMode = examMode(existing.examType);
     const newMode = examMode(examType);
     if (oldMode !== newMode) {
@@ -265,6 +392,7 @@ router.put("/:id", async (req, res) => {
         {
           _id: { $ne: existing._id },
           courseCode,
+          phaseNumber: null,
           status: { $in: ["pending", "approved"] },
         },
         { $set: { status: "cancelled" } }
@@ -300,8 +428,7 @@ router.put("/:id", async (req, res) => {
 
 /**
  * DELETE /api/bookings/:id — soft-cancel (sets status = "cancelled").
- * Preserves the document for audit trail. Cancelled bookings are excluded
- * from conflict checks and GET /api/bookings.
+ * Works for both Phase 2 manual bookings and algorithm-generated exams.
  */
 router.delete("/:id", async (req, res) => {
   try {

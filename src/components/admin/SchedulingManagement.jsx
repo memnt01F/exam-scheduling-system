@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useCourses } from '../../context/CoursesContext.jsx';
-import { getPreferences, getEnrollmentStats } from '../../services/api.js';
+import { getPreferences, getEnrollmentStats, getScheduledExams } from '../../services/api.js';
 import { toast } from 'sonner';
 import {
   Search, Bell, ChevronDown, Calendar, AlertTriangle, ClipboardList,
 } from 'lucide-react';
 import AdminPreferencesView from './AdminPreferencesView.jsx';
+import AdminScheduleCalendar from './AdminScheduleCalendar.jsx';
 
 /* ── status config ── */
 const STATUS_CFG = {
@@ -75,8 +76,10 @@ const SchedulingManagement = () => {
   const [statusFilter, setStatusFilter]       = useState('');
   const [page, setPage]                       = useState(1);
   const [reminderOpen, setReminderOpen]       = useState(false);
-  const [showPreferencesView, setShowPreferencesView] = useState(false);
-  const [enrollmentStats, setEnrollmentStats] = useState([]);
+  const [showPreferencesView, setShowPreferencesView]   = useState(false);
+  const [showScheduleCalendar, setShowScheduleCalendar] = useState(false);
+  const [scheduledExams, setScheduledExams]             = useState([]);
+  const [enrollmentStats, setEnrollmentStats]           = useState([]);
   const reminderRef = useRef(null);
 
   /* default to latest term */
@@ -106,6 +109,14 @@ const SchedulingManagement = () => {
       .then(data => setEnrollmentStats(data?.stats || []))
       .catch(() => setEnrollmentStats([]));
   }, []);
+
+  /* fetch scheduled exams when term or phase changes */
+  useEffect(() => {
+    if (!selectedTermId) return;
+    getScheduledExams({ termId: selectedTermId, phase: selectedPhaseNum })
+      .then(data => setScheduledExams(Array.isArray(data) ? data : []))
+      .catch(() => setScheduledExams([]));
+  }, [selectedTermId, selectedPhaseNum]);
 
   /* close reminder dropdown on outside click */
   useEffect(() => {
@@ -192,7 +203,28 @@ const SchedulingManagement = () => {
     ? enrollmentStats.some(s => String(s.termId) === String(selectedTermId) && s.count > 0)
     : true;
 
+  const hasSchedule = scheduledExams.length > 0;
+
   const handleRemind = () => toast.info('Feature not yet implemented');
+
+  /* ── Sub-view: schedule calendar ── */
+  if (showScheduleCalendar) {
+    return (
+      <AdminScheduleCalendar
+        exams={scheduledExams}
+        termId={selectedTermId}
+        phaseNumber={selectedPhaseNum}
+        term={selectedTerm}
+        phase={selectedPhase}
+        onBack={() => {
+          setShowScheduleCalendar(false);
+          getScheduledExams({ termId: selectedTermId, phase: selectedPhaseNum })
+            .then(data => setScheduledExams(Array.isArray(data) ? data : []))
+            .catch(() => {});
+        }}
+      />
+    );
+  }
 
   /* ── Sub-view: all preferences ── */
   if (showPreferencesView) {
@@ -539,14 +571,34 @@ const SchedulingManagement = () => {
               </div>
             )}
           </div>
-          <button
-            className="btn btn-primary btn-sm"
-            disabled
-            style={{ opacity: 0.45, cursor: 'not-allowed', whiteSpace: 'nowrap', flexShrink: 0 }}
-          >
-            <Calendar size={14} />
-            Generate Schedule
-          </button>
+          {hasSchedule ? (
+            <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+              <button
+                className="btn btn-outline btn-sm"
+                disabled
+                style={{ opacity: 0.45, cursor: 'not-allowed', whiteSpace: 'nowrap' }}
+              >
+                Regenerate
+              </button>
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={() => setShowScheduleCalendar(true)}
+                style={{ gap: 6, whiteSpace: 'nowrap' }}
+              >
+                <Calendar size={14} />
+                View Schedule
+              </button>
+            </div>
+          ) : (
+            <button
+              className="btn btn-primary btn-sm"
+              disabled
+              style={{ opacity: 0.45, cursor: 'not-allowed', whiteSpace: 'nowrap', flexShrink: 0 }}
+            >
+              <Calendar size={14} />
+              Generate Schedule
+            </button>
+          )}
         </div>
       </div>
 

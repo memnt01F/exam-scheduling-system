@@ -3,6 +3,7 @@ const express = require("express");
 const cors = require("cors");
 const connectDB = require("./config/db");
 
+const Booking = require("./models/booking.model");
 const bookingRoutes = require("./routes/booking.routes");
 const phaseRoutes = require("./routes/phase.routes");
 const auditLogRoutes = require("./routes/auditLog.routes");
@@ -38,6 +39,9 @@ const PORT = process.env.PORT || 5000;
 
 connectDB(process.env.MONGO_URL)
   .then(() => {
+    // Drop the old unique index that blocks algorithm exams from coexisting
+    // with Phase 2 bookings for the same course+examType. No-ops if already gone.
+    Booking.collection.dropIndex('courseCode_1_examType_1').catch(() => {});
     app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
   })
   .catch((err) => {
