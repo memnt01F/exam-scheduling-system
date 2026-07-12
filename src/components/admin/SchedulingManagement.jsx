@@ -63,7 +63,7 @@ const RowActionsMenu = ({ onRemind }) => {
 };
 
 /* ── Main component ── */
-const SchedulingManagement = () => {
+const SchedulingManagement = ({ restrictedDepts }) => {
   const { phases, academicTerms: terms, courses, users } = useCourses();
 
   const [selectedPhaseNum, setSelectedPhaseNum] = useState(0);
@@ -144,8 +144,11 @@ const SchedulingManagement = () => {
   const targetLevel = selectedPhaseNum === 0 ? 1 : 2;
 
   const phaseCourses = useMemo(() =>
-    courses.filter(c => Number(c.level) === targetLevel),
-    [courses, targetLevel]
+    courses.filter(c =>
+      Number(c.level) === targetLevel &&
+      (!restrictedDepts?.length || restrictedDepts.includes(c.department))
+    ),
+    [courses, targetLevel, restrictedDepts]
   );
 
   const rows = useMemo(() => phaseCourses.map(course => {
@@ -235,6 +238,7 @@ const SchedulingManagement = () => {
         phase={selectedPhase}
         term={selectedTerm}
         onBack={() => setShowPreferencesView(false)}
+        restrictedDepts={restrictedDepts}
       />
     );
   }
@@ -283,7 +287,7 @@ const SchedulingManagement = () => {
           style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}
         >
           <ClipboardList size={14} />
-          View All Preferences
+          {restrictedDepts?.length ? 'View Preferences' : 'View All Preferences'}
         </button>
       </div>
 
@@ -332,8 +336,8 @@ const SchedulingManagement = () => {
               <span className="text-sm text-muted">{submitted} of {total} courses submitted</span>
             </div>
 
-            {/* Send Reminder dropdown */}
-            <div ref={reminderRef} style={{ position: 'relative' }}>
+            {/* Send Reminder dropdown — admin only */}
+            {!restrictedDepts?.length && <div ref={reminderRef} style={{ position: 'relative' }}>
               <button
                 className="btn btn-outline btn-sm"
                 onClick={() => setReminderOpen(v => !v)}
@@ -366,7 +370,7 @@ const SchedulingManagement = () => {
                   ))}
                 </div>
               )}
-            </div>
+            </div>}
           </div>
 
           {/* Bar */}
@@ -527,8 +531,8 @@ const SchedulingManagement = () => {
         </div>
       </div>
 
-      {/* ── Schedule generation ── */}
-      <div className="card">
+      {/* ── Schedule generation — admin only ── */}
+      {!restrictedDepts?.length && <div className="card">
         <div className="card-content" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
           <div style={{ flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
@@ -600,7 +604,7 @@ const SchedulingManagement = () => {
             </button>
           )}
         </div>
-      </div>
+      </div>}
 
     </div>
   );
