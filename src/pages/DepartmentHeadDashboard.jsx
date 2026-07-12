@@ -134,7 +134,7 @@ const AssignmentsTab = ({ deptCourses, coordinators, assignments, setAssignments
 /* ── Users tab ── */
 const BLANK_USER = { name: '', email: '', password: '', department: '', isActive: true };
 
-const UsersTab = ({ managedDepts, deptUsers, addUser, updateUser }) => {
+const UsersTab = ({ managedDepts, deptUsers, addUser, updateUser, deleteUser }) => {
   const { user: authUser } = useAuth();
   const [modal, setModal] = useState(null);
   const [form, setForm]   = useState(BLANK_USER);
@@ -156,6 +156,12 @@ const UsersTab = ({ managedDepts, deptUsers, addUser, updateUser }) => {
   };
 
   const closeModal = () => { setModal(null); setForm(BLANK_USER); };
+
+  const handleDelete = async (u) => {
+    if (!confirm(`Delete ${u.name}? This cannot be undone.`)) return;
+    const res = await deleteUser(u.id, authUser?.name || 'Dept Head');
+    if (res?.success !== false) toast.success('User deleted');
+  };
 
   const handleSave = async () => {
     if (!form.name.trim()) return toast.error('Name is required');
@@ -230,9 +236,14 @@ const UsersTab = ({ managedDepts, deptUsers, addUser, updateUser }) => {
                     <td className="text-sm">{u.department || '—'}</td>
                     <td className="text-sm">{(u.assignedCourses || []).length} course{(u.assignedCourses || []).length !== 1 ? 's' : ''}</td>
                     <td>
-                      <button className="btn btn-outline btn-sm" style={{ display: 'flex', alignItems: 'center', gap: 4 }} onClick={() => openEdit(u)}>
-                        <Pencil size={12} /> Edit
-                      </button>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <button className="btn btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); openEdit(u); }} title="Edit user">
+                          <Pencil size={14} />
+                        </button>
+                        <button className="btn btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); handleDelete(u); }} title="Delete user">
+                          <Trash2 size={14} color="var(--clr-danger)" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -283,10 +294,6 @@ const UsersTab = ({ managedDepts, deptUsers, addUser, updateUser }) => {
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
                 </select>
-              </div>
-              <div>
-                <label className="text-sm font-medium">{modal.mode === 'add' ? 'Password' : 'New Password (leave blank to keep)'}</label>
-                <input className="form-input" type="password" value={form.password} onChange={e => set('password', e.target.value)} placeholder="••••••••" autoComplete="new-password" />
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '12px 20px', borderTop: '1px solid var(--clr-border)' }}>
@@ -539,7 +546,7 @@ const BookingsTab = ({ deptCourses, authUserName }) => {
 /* ── Main Dashboard ── */
 const DepartmentHeadDashboard = () => {
   const { user } = useAuth();
-  const { courses, users, updateUser: updateUserCtx, addUser: addUserCtx } = useCourses();
+  const { courses, users, updateUser: updateUserCtx, addUser: addUserCtx, deleteUser: deleteUserCtx } = useCourses();
 
   const liveUser    = users.find(u => u.email === user?.email);
   const managedDepts = liveUser?.managedDepartments || [];
@@ -652,6 +659,7 @@ const DepartmentHeadDashboard = () => {
             deptUsers={deptUsers}
             addUser={addUserCtx}
             updateUser={updateUserCtx}
+            deleteUser={deleteUserCtx}
           />
         )}
 
