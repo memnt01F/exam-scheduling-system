@@ -22,8 +22,8 @@ const bookingSchema = new mongoose.Schema(
       enum: ["pending", "approved", "rejected", "cancelled"],
       default: "pending",
     },
-    // Algorithm-generated exam fields (phaseNumber 0 or 1; null = Phase 2 manual booking)
-    phaseNumber: { type: Number, default: null },
+    // Algorithm-generated exam fields (phaseNumber 0 or 1; 2 = Phase 2 manual booking)
+    phaseNumber: { type: Number, default: 2 },
     termId: { type: mongoose.Schema.Types.ObjectId, ref: "AcademicTerm", default: null },
     room: { type: String, default: "" },
     confirmedAt: { type: Date, default: null },

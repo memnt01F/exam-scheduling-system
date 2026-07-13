@@ -1,7 +1,7 @@
 /**
  * Booking routes — GET, POST, PUT, DELETE + algorithm routes.
  *
- * Phase 2 manual bookings: phaseNumber is null (or unset on legacy docs).
+ * Phase 2 manual bookings: phaseNumber is 2.
  * Algorithm-generated exams (Phase 0/1): phaseNumber is 0 or 1, termId is set.
  *
  * GET  /            — list bookings (see query params below)
@@ -26,7 +26,7 @@ const examMode = (t) => (t === "Mid" ? "mid" : "major");
 
 /**
  * GET /api/bookings
- * - No params: Phase 2 manual bookings only (phaseNumber is null/unset)
+ * - No params: Phase 2 manual bookings only (phaseNumber is 2)
  * - ?phaseNumber=0&termId=xxx: algorithm exams for that phase + term
  */
 router.get("/", async (req, res) => {
@@ -38,8 +38,8 @@ router.get("/", async (req, res) => {
       query.phaseNumber = Number(phaseNumber);
       if (termId) query.termId = termId;
     } else {
-      // Phase 2 manual bookings: phaseNumber is null or field absent on legacy docs
-      query.phaseNumber = null;
+      // Phase 2 manual bookings
+      query.phaseNumber = 2;
     }
 
     const bookings = await Booking.find(query).sort({ examDate: 1 });
@@ -176,13 +176,13 @@ router.post("/", async (req, res) => {
     const existingAnyStatus = await Booking.findOne({
       courseCode: normalized,
       examType: type,
-      phaseNumber: null,
+      phaseNumber: 2,
     });
 
     // Enforce Mid ↔ Major exclusivity for Phase 2 bookings.
     const activeForCourse = await Booking.find({
       courseCode: normalized,
-      phaseNumber: null,
+      phaseNumber: 2,
       status: { $in: ["pending", "approved"] },
     }).select("examType");
     const requestedMode = examMode(type);
@@ -198,7 +198,7 @@ router.post("/", async (req, res) => {
     const duplicate = await Booking.findOne({
       courseCode: normalized,
       examType: type,
-      phaseNumber: null,
+      phaseNumber: 2,
       status: { $in: ["pending", "approved"] },
     });
     if (duplicate) {
@@ -259,7 +259,7 @@ router.post("/", async (req, res) => {
       createdBy,
       notes,
       status: "pending",
-      phaseNumber: null,
+      phaseNumber: 2,
     });
 
     await AuditLog.create({
@@ -293,7 +293,7 @@ router.put("/:id", async (req, res) => {
     if (!existing) return res.status(404).json({ message: "Booking not found" });
 
     // ── Algorithm exam branch ──
-    if (existing.phaseNumber !== null && existing.phaseNumber !== undefined) {
+    if (existing.phaseNumber !== 2) {
       const newExamDate = req.body.examDate
         ? parseDateToUtcDayBounds(req.body.examDate).startOfDayUtc
         : existing.examDate;
@@ -353,7 +353,7 @@ router.put("/:id", async (req, res) => {
       _id: { $ne: existing._id },
       courseCode,
       examType,
-      phaseNumber: null,
+      phaseNumber: 2,
       status: { $in: ["pending", "approved"] },
     }).select("_id");
     if (otherForCourse) {
@@ -392,7 +392,7 @@ router.put("/:id", async (req, res) => {
         {
           _id: { $ne: existing._id },
           courseCode,
-          phaseNumber: null,
+          phaseNumber: 2,
           status: { $in: ["pending", "approved"] },
         },
         { $set: { status: "cancelled" } }

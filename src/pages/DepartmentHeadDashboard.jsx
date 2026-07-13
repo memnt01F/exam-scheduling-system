@@ -397,7 +397,7 @@ const BookingsTab = ({ deptCourses, authUserName }) => {
     try {
       const all = await getBookings();
       const deptBookings = (Array.isArray(all) ? all : []).filter(
-        b => b.phaseNumber === null || b.phaseNumber === undefined
+        b => b.phaseNumber === 2
       ).filter(b => deptCodes.has(b.courseCode));
       setBookings(deptBookings);
     } catch {
@@ -435,7 +435,7 @@ const BookingsTab = ({ deptCourses, authUserName }) => {
         maleProctors:   Number(form.maleProctors) || 0,
         femaleProctors: Number(form.femaleProctors) || 0,
         status:         'pending',
-        phaseNumber:    null,
+        phaseNumber:    2,
         createdBy:      authUserName,
         updatedBy:      authUserName,
       };
