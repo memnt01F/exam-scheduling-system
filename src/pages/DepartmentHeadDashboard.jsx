@@ -1,10 +1,11 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import DashboardLayout from '../components/DashboardLayout.jsx';
 import SchedulingManagement from '../components/admin/SchedulingManagement.jsx';
+import ProctorSummary from '../components/admin/ProctorSummary.jsx';
 import { useCourses } from '../context/CoursesContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { getBookings, createBooking, updateBooking, deleteBooking } from '../services/api.js';
-import { BookOpen, BarChart2, Search, AlertTriangle, Users, CalendarDays, Plus, Pencil, X, Trash2, ChevronDown } from 'lucide-react';
+import { BookOpen, BarChart2, Search, AlertTriangle, Users, CalendarDays, Plus, Pencil, X, Trash2, ChevronDown, UserCheck } from 'lucide-react';
 import { toast } from 'sonner';
 
 const EXAM_TYPES = ['Major 1', 'Major 2', 'Major 3', 'Mid'];
@@ -14,6 +15,7 @@ const tabs = [
   { id: 'users',       label: 'User Management',    icon: Users },
   { id: 'preferences', label: 'Schedule Management', icon: BarChart2 },
   { id: 'bookings',    label: 'Bookings',            icon: CalendarDays },
+  { id: 'proctors',    label: 'Proctor Summary',     icon: UserCheck },
 ];
 
 /* ── Searchable Select ── */
@@ -737,6 +739,10 @@ const DepartmentHeadDashboard = () => {
             deptCourses={deptCourses}
             authUserName={user?.name || 'Dept Head'}
           />
+        )}
+
+        {activeTab === 'proctors' && (
+          <ProctorSummary restrictedDepts={managedDepts} />
         )}
       </div>
     </DashboardLayout>
