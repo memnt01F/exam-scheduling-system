@@ -10,6 +10,7 @@ import PreferencesPage from "./pages/PreferencesPage.jsx";
 import AdminDashboard from "./pages/AdminDashboard.jsx";
 import DepartmentHeadDashboard from "./pages/DepartmentHeadDashboard.jsx";
 import NotFound from "./pages/NotFound.jsx";
+import RequireRole from "./components/RequireRole.jsx";
 
 class ErrorBoundary extends Component {
   constructor(props) {
@@ -90,11 +91,11 @@ const App = () => (
             <Toaster />
             <Routes>
               <Route path="/" element={<Login />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/booking/:courseId" element={<BookingPage />} />
-              <Route path="/preferences/:courseCode" element={<PreferencesPage />} />
-              <Route path="/committee" element={<DepartmentHeadDashboard />} />
-              <Route path="/admin" element={<AdminDashboard />} />
+              <Route path="/dashboard" element={<RequireRole allow={['coordinator']}><Dashboard /></RequireRole>} />
+              <Route path="/booking/:courseId" element={<RequireRole allow={['coordinator', 'admin']}><BookingPage /></RequireRole>} />
+              <Route path="/preferences/:courseCode" element={<RequireRole allow={['coordinator']}><PreferencesPage /></RequireRole>} />
+              <Route path="/committee" element={<RequireRole allow={['committee']}><DepartmentHeadDashboard /></RequireRole>} />
+              <Route path="/admin" element={<RequireRole allow={['admin']}><AdminDashboard /></RequireRole>} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </AppLoader>

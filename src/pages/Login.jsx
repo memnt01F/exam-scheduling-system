@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { ClipboardList, Shield, Eye, EyeOff } from 'lucide-react';
 
@@ -11,13 +11,16 @@ const ROLE_PATHS = {
 
 const Login = () => {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { login, user } = useAuth();
 
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
   const [showPw, setShowPw]     = useState(false);
   const [error, setError]       = useState('');
   const [loading, setLoading]   = useState(false);
+
+  // Already logged in — send to their dashboard
+  if (user) return <Navigate to={ROLE_PATHS[user.role] || '/dashboard'} replace />;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
