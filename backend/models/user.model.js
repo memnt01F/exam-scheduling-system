@@ -29,6 +29,7 @@ const userSchema = new mongoose.Schema(
       default: "active",
     },
     createdBy: { type: String },
+    mustChangePassword: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

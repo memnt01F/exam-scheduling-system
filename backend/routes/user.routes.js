@@ -11,7 +11,7 @@ const AuditLog = require("../models/auditLog.model");
 
 const router = express.Router();
 
-const FIXED_PASSWORD = "kfupm2026";
+const FIXED_PASSWORD = "kfupm1234";
 
 /**
  * POST /api/users/set-passwords
@@ -76,6 +76,7 @@ router.post("/login", async (req, res) => {
         department: user.department,
         managedDepartments: user.managedDepartments || [],
         assignedCourses: user.assignedCourses,
+        mustChangePassword: user.mustChangePassword || false,
       },
     });
   } catch (err) {
@@ -123,6 +124,7 @@ router.post("/", async (req, res) => {
       assignedCourses: Array.isArray(assignedCourses) ? assignedCourses : [],
       status: status || "active",
       createdBy: createdBy || "admin",
+      mustChangePassword: true,
     });
 
     await AuditLog.create({
@@ -186,6 +188,26 @@ router.delete("/:id", async (req, res) => {
     });
 
     res.json({ message: hard ? "User deleted" : "User deactivated", user });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+/** PUT /api/users/:id/change-password */
+router.put("/:id/change-password", async (req, res) => {
+  try {
+    const { newPassword } = req.body || {};
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ message: "Password must be at least 6 characters" });
+    }
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    user.password = await bcrypt.hash(newPassword, 10);
+    user.mustChangePassword = false;
+    await user.save();
+
+    res.json({ message: "Password updated successfully" });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

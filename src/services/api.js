@@ -106,6 +106,13 @@ export async function createUser(payload) {
 export async function updateUser(id, payload) {
   return request(`/users/${id}`, { method: "PUT", body: JSON.stringify(payload) });
 }
+export async function changePassword(id, newPassword) {
+  return request(`/users/${id}/change-password`, {
+    method: 'PUT',
+    body: JSON.stringify({ newPassword }),
+  });
+}
+
 export async function deleteUser(id, { hard = false, ...body } = {}) {
   const qs = hard ? "?hard=true" : "";
   return request(`/users/${id}${qs}`, { method: "DELETE", body: JSON.stringify(body) });

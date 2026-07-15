@@ -57,6 +57,14 @@ export const AuthProvider = ({ children }) => {
     sessionStorage.removeItem(STORAGE_KEY);
   };
 
+  const updateAuthUser = (patch) => {
+    setUser(prev => {
+      const updated = { ...prev, ...patch };
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      return updated;
+    });
+  };
+
   // Kept for backward compatibility with any component that still calls loginWithUser
   const loginWithUser = (userObj) => {
     setUser(userObj || null);
@@ -65,7 +73,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, loginWithUser }}>
+    <AuthContext.Provider value={{ user, login, logout, loginWithUser, updateAuthUser }}>
       {children}
     </AuthContext.Provider>
   );
@@ -73,6 +81,6 @@ export const AuthProvider = ({ children }) => {
 
 export const useAuth = () => {
   const ctx = useContext(AuthContext);
-  if (!ctx) return { user: null, login: async () => ({ ok: false }), logout: () => {}, loginWithUser: () => {} };
+  if (!ctx) return { user: null, login: async () => ({ ok: false }), logout: () => {}, loginWithUser: () => {}, updateAuthUser: () => {} };
   return ctx;
 };

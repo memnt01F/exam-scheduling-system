@@ -780,10 +780,12 @@ export const CoursesProvider = ({ children }) => {
       setUsers(prev => prev.map(u => u === optimistic ? normalizeServerUser(created) : u));
       return { success: true, user: created };
     } catch (err) {
+      setUsers(prev => prev.filter(u => u !== optimistic));
+      if (err.status === 409) return { success: false, message: err.data?.message || 'A user with this email already exists' };
       console.warn('[users] create failed:', err.message);
       return { success: true, offline: true };
     }
-  }, [backendOnline, normalizeServerUser]);
+  }, [backendOnline, normalizeServerUser, courses]);
 
   /** Update a user. */
   const updateUser = useCallback(async (userId, patch, updatedBy) => {
