@@ -276,11 +276,13 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
       {/* ── Header ── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button className="btn btn-outline btn-sm" onClick={onBack} style={{ padding: '4px 10px', flexShrink: 0 }}>
-            <ArrowLeft size={14} />
-          </button>
+          {onBack && (
+            <button className="btn btn-outline btn-sm" onClick={onBack} style={{ padding: '4px 10px', flexShrink: 0 }}>
+              <ArrowLeft size={14} />
+            </button>
+          )}
           <div>
-            <span className="font-medium" style={{ fontSize: 15 }}>Generated Schedule</span>
+            <span className="font-medium" style={{ fontSize: 15 }}>Exams Schedule</span>
             {term && (
               <span className="text-xs text-muted" style={{ marginLeft: 8 }}>
                 {term.name} · Phase {phaseNumber}

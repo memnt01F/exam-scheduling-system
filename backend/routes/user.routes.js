@@ -197,8 +197,8 @@ router.delete("/:id", async (req, res) => {
 router.put("/:id/change-password", async (req, res) => {
   try {
     const { newPassword } = req.body || {};
-    if (!newPassword || newPassword.length < 6) {
-      return res.status(400).json({ message: "Password must be at least 6 characters" });
+    if (!newPassword || newPassword.length < 8) {
+      return res.status(400).json({ message: "Password must be at least 8 characters" });
     }
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ message: "User not found" });

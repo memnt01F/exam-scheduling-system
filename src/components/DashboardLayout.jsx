@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { changePassword } from '../services/api.js';
-import { LayoutDashboard, LogOut, User, ClipboardList, Users, Settings, AlertTriangle, X } from 'lucide-react';
+import { LayoutDashboard, LogOut, User, ClipboardList, Users, Settings, AlertTriangle, X, KeyRound, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 
 const roleNavItems = {
@@ -26,10 +26,20 @@ const DashboardLayout = ({ children }) => {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [saving, setSaving] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const profileRef = useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (profileRef.current && !profileRef.current.contains(e.target)) setProfileOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   const handleChangePassword = async () => {
     if (!newPassword.trim()) return toast.error('Enter a new password');
-    if (newPassword.length < 6) return toast.error('Password must be at least 6 characters');
+    if (newPassword.length < 8) return toast.error('Password must be at least 8 characters');
     if (newPassword !== confirmPassword) return toast.error('Passwords do not match');
     setSaving(true);
     try {
@@ -87,9 +97,37 @@ const DashboardLayout = ({ children }) => {
             <span className="badge badge-secondary" style={{ textTransform: 'capitalize', fontSize: 11 }}>
               {user?.role === 'committee' ? 'Dept. Head' : user?.role || 'guest'}
             </span>
-            <div className="header-user hidden-sm">
-              <User size={16} />
-              <span>{displayName}</span>
+            <div ref={profileRef} style={{ position: 'relative' }}>
+              <button
+                className="btn btn-ghost btn-sm hidden-sm"
+                style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                onClick={() => setProfileOpen(o => !o)}
+              >
+                <User size={16} />
+                <span>{displayName}</span>
+                <ChevronDown size={13} />
+              </button>
+              {profileOpen && (
+                <div className="card" style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', minWidth: 180, zIndex: 200, padding: '4px 0' }}>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    style={{ width: '100%', justifyContent: 'flex-start', gap: 8, padding: '8px 14px', borderRadius: 0 }}
+                    onClick={() => { setProfileOpen(false); setShowModal(true); }}
+                  >
+                    <KeyRound size={14} />
+                    Change Password
+                  </button>
+                  <div style={{ borderTop: '1px solid var(--clr-border)', margin: '4px 0' }} />
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    style={{ width: '100%', justifyContent: 'flex-start', gap: 8, padding: '8px 14px', borderRadius: 0, color: 'var(--clr-danger)' }}
+                    onClick={handleLogout}
+                  >
+                    <LogOut size={14} />
+                    Logout
+                  </button>
+                </div>
+              )}
             </div>
             <button className="btn btn-ghost btn-icon" onClick={handleLogout}>
               <LogOut size={16} />

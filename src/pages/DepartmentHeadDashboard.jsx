@@ -4,7 +4,8 @@ import SchedulingManagement from '../components/admin/SchedulingManagement.jsx';
 import ProctorSummary from '../components/admin/ProctorSummary.jsx';
 import { useCourses } from '../context/CoursesContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
-import { getBookings, createBooking, updateBooking, deleteBooking } from '../services/api.js';
+import { getBookings, createBooking, updateBooking, deleteBooking, getScheduledExams } from '../services/api.js';
+import AdminScheduleCalendar from '../components/admin/AdminScheduleCalendar.jsx';
 import { BookOpen, BarChart2, Search, AlertTriangle, Users, CalendarDays, Plus, Pencil, X, Trash2, ChevronDown, UserCheck } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -15,6 +16,7 @@ const tabs = [
   { id: 'users',       label: 'User Management',    icon: Users },
   { id: 'preferences', label: 'Schedule Management', icon: BarChart2 },
   { id: 'bookings',    label: 'Bookings',            icon: CalendarDays },
+  { id: 'calendar',    label: 'Calendar',            icon: CalendarDays },
   { id: 'proctors',    label: 'Proctor Summary',     icon: UserCheck },
 ];
 
@@ -610,6 +612,54 @@ const BookingsTab = ({ deptCourses, authUserName }) => {
   );
 };
 
+/* ── Calendar Tab ── */
+const CalendarTab = () => {
+  const { academicTerms } = useCourses();
+  const [selectedTermId, setSelectedTermId] = useState('');
+  const [exams, setExams] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!academicTerms.length || selectedTermId) return;
+    const active = academicTerms.find(t => t.isActive) || academicTerms[0];
+    if (active) setSelectedTermId(active._id || active.id);
+  }, [academicTerms, selectedTermId]);
+
+  useEffect(() => {
+    if (!selectedTermId) return;
+    setLoading(true);
+    getScheduledExams({ termId: selectedTermId, phase: 0 })
+      .then(data => setExams(Array.isArray(data) ? data : []))
+      .catch(() => setExams([]))
+      .finally(() => setLoading(false));
+  }, [selectedTermId]);
+
+  const selectedTerm = academicTerms.find(t => (t._id || t.id) === selectedTermId);
+
+  if (!academicTerms.length) return <p className="text-sm text-muted">No academic terms available.</p>;
+
+  return (
+    <div className="space-y-4">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <label className="text-sm font-medium">Term</label>
+        <select className="form-input" style={{ width: 'auto' }} value={selectedTermId} onChange={e => setSelectedTermId(e.target.value)}>
+          {academicTerms.map(t => <option key={t._id || t.id} value={t._id || t.id}>{t.name}</option>)}
+        </select>
+      </div>
+      {loading && <p className="text-sm text-muted">Loading schedule…</p>}
+      {!loading && selectedTerm && (
+        <AdminScheduleCalendar
+          exams={exams}
+          termId={selectedTermId}
+          phaseNumber={0}
+          term={selectedTerm}
+          readOnly
+        />
+      )}
+    </div>
+  );
+};
+
 /* ── Main Dashboard ── */
 const DepartmentHeadDashboard = () => {
   const { user } = useAuth();
@@ -740,6 +790,8 @@ const DepartmentHeadDashboard = () => {
             authUserName={user?.name || 'Dept Head'}
           />
         )}
+
+        {activeTab === 'calendar' && <CalendarTab />}
 
         {activeTab === 'proctors' && (
           <ProctorSummary restrictedDepts={managedDepts} />
