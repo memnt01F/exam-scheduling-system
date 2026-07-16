@@ -340,7 +340,6 @@ const EditUserModal = ({ user, departments, activeTermId, onClose, onSave, onDel
 
   const handleSave = () => {
     if (!form.name.trim() || !form.email.trim()) { toast.error('Name and Email are required'); return; }
-    if (form.role === 'coordinator' && assignedCourseIds.length === 0) { toast.error('Please assign at least one course'); return; }
     if (form.role === 'committee' && managedDepts.length === 0) { toast.error('Please select at least one managed department'); return; }
     const selectedCourseCodes = assignedCourseIds
       .map(id => courses.find(c => c.id === id)?.code)
@@ -500,7 +499,6 @@ const AddUserModal = ({ departments, courses, onClose, onSave, onImport }) => {
 
   const handleSave = () => {
     if (!form.name.trim() || !form.email.trim()) { toast.error('Name and Email are required'); return; }
-    if (form.role === 'coordinator' && assignedCourseIds.length === 0) { toast.error('Please assign at least one course to the coordinator'); return; }
     if (form.role === 'committee' && managedDepts.length === 0) { toast.error('Please select at least one managed department'); return; }
     const selectedCourseCodes = assignedCourseIds
       .map(id => courses.find(c => c.id === id)?.code)
