@@ -22,7 +22,7 @@ router.get("/", async (_req, res) => {
 /** POST /api/courses */
 router.post("/", async (req, res) => {
   try {
-    const { code, name, level, department, coordinator, status, createdBy } = req.body || {};
+    const { code, name, level, department, status, createdBy } = req.body || {};
     if (!code || !name || level === undefined || level === null || !department) {
       return res.status(400).json({ message: "code, name, level, and department are required" });
     }
@@ -38,7 +38,6 @@ router.post("/", async (req, res) => {
       name,
       level: Number(level),
       department,
-      coordinator: coordinator || "",
       status: status || "active",
     });
 
@@ -59,7 +58,7 @@ router.post("/", async (req, res) => {
 /** PUT /api/courses/:id */
 router.put("/:id", async (req, res) => {
   try {
-    const allowed = ["code", "name", "level", "department", "coordinator", "status"];
+    const allowed = ["code", "name", "level", "department", "status"];
     const update = {};
     for (const k of allowed) if (k in req.body) update[k] = req.body[k];
     if (update.code) update.code = String(update.code).trim().toUpperCase();

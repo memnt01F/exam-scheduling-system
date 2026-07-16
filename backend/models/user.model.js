@@ -22,7 +22,6 @@ const userSchema = new mongoose.Schema(
     },
     department: { type: String, default: "" },
     managedDepartments: { type: [String], default: [] },
-    assignedCourses: { type: [String], default: [] },
     status: {
       type: String,
       enum: ["active", "inactive"],

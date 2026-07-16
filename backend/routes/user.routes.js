@@ -7,6 +7,7 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const User = require("../models/user.model");
+const CourseAssignment = require("../models/courseAssignment.model");
 const AuditLog = require("../models/auditLog.model");
 
 const router = express.Router();
@@ -66,7 +67,11 @@ router.post("/login", async (req, res) => {
       return res.status(401).json({ message: "Invalid email or password" });
     }
 
-    // Return user without the password field
+    // For coordinators, populate assigned courses from the junction table
+    const assignedCourses = user.role === "coordinator"
+      ? (await CourseAssignment.find({ coordinatorId: user._id }).select("courseCode")).map(a => a.courseCode)
+      : [];
+
     res.json({
       user: {
         id: user._id.toString(),
@@ -75,7 +80,7 @@ router.post("/login", async (req, res) => {
         role: user.role,
         department: user.department,
         managedDepartments: user.managedDepartments || [],
-        assignedCourses: user.assignedCourses,
+        assignedCourses,
         mustChangePassword: user.mustChangePassword || false,
       },
     });
@@ -102,7 +107,7 @@ router.get("/", async (_req, res) => {
  */
 router.post("/", async (req, res) => {
   try {
-    const { name, email, role, department, managedDepartments, assignedCourses, status, createdBy } = req.body || {};
+    const { name, email, role, department, managedDepartments, status, createdBy } = req.body || {};
     if (!name || !email || !role) {
       return res.status(400).json({ message: "name, email, and role are required" });
     }
@@ -121,7 +126,6 @@ router.post("/", async (req, res) => {
       role,
       department: department || "",
       managedDepartments: Array.isArray(managedDepartments) ? managedDepartments : [],
-      assignedCourses: Array.isArray(assignedCourses) ? assignedCourses : [],
       status: status || "active",
       createdBy: createdBy || "admin",
       mustChangePassword: true,
@@ -143,7 +147,7 @@ router.post("/", async (req, res) => {
 /** PUT /api/users/:id */
 router.put("/:id", async (req, res) => {
   try {
-    const allowed = ["name", "email", "role", "department", "managedDepartments", "assignedCourses", "status"];
+    const allowed = ["name", "email", "role", "department", "managedDepartments", "status"];
     const update = {};
     for (const k of allowed) if (k in req.body) update[k] = req.body[k];
 

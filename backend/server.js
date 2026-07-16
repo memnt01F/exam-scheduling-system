@@ -13,6 +13,7 @@ const academicTermRoutes = require("./routes/academicTerm.routes");
 const preferenceRoutes = require("./routes/preference.routes");
 const courseOfferingRoutes = require("./routes/courseOffering.routes");
 const enrollmentRoutes = require("./routes/enrollment.routes");
+const courseAssignmentRoutes = require("./routes/courseAssignment.routes");
 
 const app = express();
 app.use(cors({
@@ -34,6 +35,7 @@ app.use("/api/terms", academicTermRoutes);
 app.use("/api/preferences", preferenceRoutes);
 app.use("/api/course-offerings", courseOfferingRoutes);
 app.use("/api/enrollments", enrollmentRoutes);
+app.use("/api/course-assignments", courseAssignmentRoutes);
 
 const PORT = process.env.PORT || 5000;
 

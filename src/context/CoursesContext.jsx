@@ -541,7 +541,6 @@ export const CoursesProvider = ({ children }) => {
     name: c.name,
     level: c.level,
     department: c.department,
-    coordinator: c.coordinator || '',
     isActive: c.status !== 'inactive',
     bookings: {},
   }), []);
@@ -759,21 +758,12 @@ export const CoursesProvider = ({ children }) => {
     setUsers(prev => [...prev, optimistic]);
     if (!backendOnline) return { success: true, offline: true };
     try {
-      // Map assigned course ids (client-side ids like 'c0') to canonical course codes
-      const mappedAssigned = Array.from(new Set((user.assignedCourses || []).map((val) => {
-        const raw = String(val || '').trim();
-        const found = courses.find(c => String(c.id) === raw || String(c._serverId || '') === raw || String(c.code || '').replace(/\s+/g, '').toUpperCase() === raw.replace(/\s+/g, '').toUpperCase());
-        const code = found ? (found.code || raw) : raw;
-        return normalizeCode(code);
-      })));
-
       const created = await createUserApi({
         name: user.name,
         email: user.email,
         role: user.role,
         department: user.department || '',
         managedDepartments: Array.isArray(user.managedDepartments) ? user.managedDepartments : [],
-        assignedCourses: mappedAssigned,
         status: user.isActive === false ? 'inactive' : 'active',
         createdBy: createdBy || 'admin',
       });
@@ -794,16 +784,7 @@ export const CoursesProvider = ({ children }) => {
     const serverId = target?._serverId || (typeof userId === 'string' && /^[a-f0-9]{24}$/i.test(userId) ? userId : null);
     if (!backendOnline || !serverId) return { success: true, offline: !backendOnline };
     try {
-      // If assignedCourses is present in patch, map client ids to course codes
       const payload = { ...patch, updatedBy: updatedBy || 'admin' };
-      if (Array.isArray(patch.assignedCourses)) {
-        payload.assignedCourses = Array.from(new Set((patch.assignedCourses || []).map((val) => {
-          const raw = String(val || '').trim();
-          const found = courses.find(c => String(c.id) === raw || String(c._serverId || '') === raw || String(c.code || '').replace(/\s+/g, '').toUpperCase() === raw.replace(/\s+/g, '').toUpperCase());
-          const code = found ? (found.code || raw) : raw;
-          return normalizeCode(code);
-        })));
-      }
       if ('isActive' in patch) payload.status = patch.isActive ? 'active' : 'inactive';
       const updated = await updateUserApi(serverId, payload);
       setUsers(prev => prev.map(u => u.id === userId ? normalizeServerUser(updated) : u));

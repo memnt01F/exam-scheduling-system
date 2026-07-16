@@ -4,9 +4,9 @@ import SchedulingManagement from '../components/admin/SchedulingManagement.jsx';
 import ProctorSummary from '../components/admin/ProctorSummary.jsx';
 import { useCourses } from '../context/CoursesContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
-import { getBookings, createBooking, updateBooking, deleteBooking, getScheduledExams } from '../services/api.js';
+import { getBookings, createBooking, updateBooking, deleteBooking, getScheduledExams, getAssignments, bulkSaveAssignments } from '../services/api.js';
 import AdminScheduleCalendar from '../components/admin/AdminScheduleCalendar.jsx';
-import { BookOpen, BarChart2, Search, AlertTriangle, Users, CalendarDays, Plus, Pencil, X, Trash2, ChevronDown, UserCheck } from 'lucide-react';
+import { BookOpen, BarChart2, Search, AlertTriangle, Users, CalendarDays, Plus, Pencil, X, Trash2, ChevronDown, UserCheck, Check } from 'lucide-react';
 import { toast } from 'sonner';
 
 const EXAM_TYPES = ['Major 1', 'Major 2', 'Major 3', 'Mid'];
@@ -201,15 +201,16 @@ const AssignmentsTab = ({ deptCourses, coordinators, assignments, setAssignments
 };
 
 /* ── Users tab ── */
-const BLANK_USER = { name: '', email: '', password: '', department: '', isActive: true };
+const BLANK_USER = { name: '', email: '', password: '', department: '', isActive: true, selectedCourseCodes: [] };
 
-const UsersTab = ({ managedDepts, deptUsers, addUser, updateUser, deleteUser }) => {
+const UsersTab = ({ managedDepts, deptCourses, activeTermId, deptUsers, addUser, updateUser, deleteUser, assignments, setAssignments }) => {
   const { user: authUser } = useAuth();
   const [modal, setModal] = useState(null);
   const [form, setForm]   = useState(BLANK_USER);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
   const [deptFilter, setDeptFilter] = useState('');
+  const [courseSearch, setCourseSearch] = useState('');
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
@@ -220,11 +221,14 @@ const UsersTab = ({ managedDepts, deptUsers, addUser, updateUser, deleteUser }) 
 
   const openEdit = (u) => {
     const dept = managedDepts.includes(u.department) ? u.department : (managedDepts[0] || '');
-    setForm({ name: u.name, email: u.email, password: '', department: dept, isActive: u.isActive !== false });
+    const currentCodes = Object.entries(assignments || {})
+      .filter(([, id]) => id === u.id)
+      .map(([code]) => code);
+    setForm({ name: u.name, email: u.email, password: '', department: dept, isActive: u.isActive !== false, selectedCourseCodes: currentCodes });
     setModal({ mode: 'edit', data: u });
   };
 
-  const closeModal = () => { setModal(null); setForm(BLANK_USER); };
+  const closeModal = () => { setModal(null); setForm(BLANK_USER); setCourseSearch(''); };
 
   const handleDelete = async (u) => {
     if (!confirm(`Delete ${u.name}? This cannot be undone.`)) return;
@@ -236,20 +240,52 @@ const UsersTab = ({ managedDepts, deptUsers, addUser, updateUser, deleteUser }) 
     if (!form.name.trim()) return toast.error('Name is required');
     if (!form.email.trim()) return toast.error('Email is required');
     if (!form.department) return toast.error('Department is required');
-    if (modal.mode === 'add' && !form.password.trim()) return toast.error('Password is required for new users');
     setSaving(true);
     if (modal.mode === 'add') {
       const res = await addUser(
-        { name: form.name, email: form.email, password: form.password, role: 'coordinator', department: form.department, isActive: form.isActive, assignedCourses: [], managedDepartments: [] },
+        { name: form.name, email: form.email, role: 'coordinator', department: form.department, isActive: form.isActive, managedDepartments: [] },
         authUser?.name || 'Dept Head'
       );
       if (res?.success === false) { setSaving(false); return; }
+      const newUserId = res?.user?._id;
+      if (newUserId && activeTermId && form.selectedCourseCodes.length > 0) {
+        try {
+          const payload = form.selectedCourseCodes.map(code => ({ courseCode: code, coordinatorId: newUserId }));
+          await bulkSaveAssignments(activeTermId, payload, authUser?.name || 'Dept Head');
+          setAssignments(prev => {
+            const next = { ...prev };
+            form.selectedCourseCodes.forEach(code => { next[code] = newUserId; });
+            return next;
+          });
+        } catch { toast.error('User added but course assignments could not be saved'); }
+      }
       toast.success('User added');
     } else {
       const patch = { name: form.name, email: form.email, department: form.department, isActive: form.isActive };
       if (form.password.trim()) patch.password = form.password;
       const res = await updateUser(modal.data.id, patch, authUser?.name || 'Dept Head');
       if (res?.success === false) { setSaving(false); return; }
+      if (activeTermId) {
+        const currentCodes = Object.entries(assignments || {}).filter(([, id]) => id === modal.data.id).map(([code]) => code);
+        const newCodes = form.selectedCourseCodes;
+        const toAdd = newCodes.filter(c => !currentCodes.includes(c));
+        const toRemove = currentCodes.filter(c => !newCodes.includes(c));
+        if (toAdd.length > 0 || toRemove.length > 0) {
+          try {
+            const payload = [
+              ...toAdd.map(code => ({ courseCode: code, coordinatorId: modal.data.id })),
+              ...toRemove.map(code => ({ courseCode: code, coordinatorId: '' })),
+            ];
+            await bulkSaveAssignments(activeTermId, payload, authUser?.name || 'Dept Head');
+            setAssignments(prev => {
+              const next = { ...prev };
+              toRemove.forEach(code => delete next[code]);
+              toAdd.forEach(code => { next[code] = modal.data.id; });
+              return next;
+            });
+          } catch { toast.error('User updated but course assignments could not be saved'); }
+        }
+      }
       toast.success('User updated');
     }
     setSaving(false);
@@ -303,7 +339,7 @@ const UsersTab = ({ managedDepts, deptUsers, addUser, updateUser, deleteUser }) 
                     <td className="font-medium">{u.name}</td>
                     <td className="text-sm">{u.email}</td>
                     <td className="text-sm">{u.department || '—'}</td>
-                    <td className="text-sm">{(u.assignedCourses || []).length} course{(u.assignedCourses || []).length !== 1 ? 's' : ''}</td>
+                    <td className="text-sm">{Object.values(assignments || {}).filter(id => id === u.id).length} course{Object.values(assignments || {}).filter(id => id === u.id).length !== 1 ? 's' : ''}</td>
                     <td>
                       <div style={{ display: 'flex', gap: 4 }}>
                         <button className="btn btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); openEdit(u); }} title="Edit user">
@@ -363,6 +399,59 @@ const UsersTab = ({ managedDepts, deptUsers, addUser, updateUser, deleteUser }) 
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
                 </select>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Assigned Courses</label>
+                <input
+                  className="form-input"
+                  placeholder="Search courses…"
+                  value={courseSearch}
+                  onChange={e => setCourseSearch(e.target.value)}
+                  style={{ marginBottom: 8 }}
+                  autoComplete="new-password"
+                />
+                <div style={{ border: '1px solid var(--clr-border)', borderRadius: 8, maxHeight: 160, overflowY: 'auto', padding: 4 }}>
+                  {deptCourses.filter(c => {
+                    const q = courseSearch.replace(/\s+/g, '').toLowerCase();
+                    return !q || c.code.replace(/\s+/g, '').toLowerCase().includes(q) || c.name.toLowerCase().includes(q);
+                  }).map(c => {
+                    const selected = (form.selectedCourseCodes || []).includes(c.code);
+                    return (
+                      <div
+                        key={c.code}
+                        onClick={() => set('selectedCourseCodes', selected
+                          ? (form.selectedCourseCodes || []).filter(x => x !== c.code)
+                          : [...(form.selectedCourseCodes || []), c.code]
+                        )}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px',
+                          borderRadius: 6, cursor: 'pointer', fontSize: 13,
+                          background: selected ? 'var(--clr-primary-light, hsl(215 80% 95%))' : 'transparent',
+                        }}
+                      >
+                        <span style={{
+                          width: 18, height: 18, borderRadius: 4, flexShrink: 0,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          border: selected ? 'none' : '1.5px solid var(--clr-border)',
+                          background: selected ? 'var(--clr-primary)' : 'transparent',
+                          color: '#fff',
+                        }}>
+                          {selected && <Check size={12} />}
+                        </span>
+                        <span className="font-medium">{c.code}</span>
+                        <span style={{ color: 'var(--clr-muted)' }}>— {c.name}</span>
+                      </div>
+                    );
+                  })}
+                  {deptCourses.length === 0 && (
+                    <div style={{ padding: 12, textAlign: 'center', color: 'var(--clr-muted)', fontSize: 13 }}>No courses in your department</div>
+                  )}
+                </div>
+                {(form.selectedCourseCodes || []).length > 0 && (
+                  <div style={{ fontSize: 12, color: 'var(--clr-muted)', marginTop: 4 }}>
+                    {form.selectedCourseCodes.length} course{form.selectedCourseCodes.length !== 1 ? 's' : ''} selected
+                  </div>
+                )}
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '12px 20px', borderTop: '1px solid var(--clr-border)' }}>
@@ -663,7 +752,7 @@ const CalendarTab = () => {
 /* ── Main Dashboard ── */
 const DepartmentHeadDashboard = () => {
   const { user } = useAuth();
-  const { courses, users, updateUser: updateUserCtx, addUser: addUserCtx, deleteUser: deleteUserCtx } = useCourses();
+  const { courses, users, academicTerms, updateUser: updateUserCtx, addUser: addUserCtx, deleteUser: deleteUserCtx } = useCourses();
 
   const liveUser    = users.find(u => u.email === user?.email);
   const managedDepts = liveUser?.managedDepartments || [];
@@ -691,45 +780,38 @@ const DepartmentHeadDashboard = () => {
   const [assignments, setAssignments] = useState({});
   const [saving, setSaving] = useState(false);
 
+  const activeTerm = academicTerms.find(t => t.isActive) || academicTerms[0];
+  const activeTermId = activeTerm?._serverId || activeTerm?.id || '';
+
+  // Load assignments from the junction table when the active term is known
   useEffect(() => {
-    const init = {};
-    deptCourses.forEach(c => {
-      const coord = coordinators.find(u => (u.assignedCourses || []).includes(c.code));
-      init[c.code] = coord?.id || '';
-    });
-    setAssignments(init);
-  }, [deptCourses, coordinators]);
+    if (!activeTermId) return;
+    getAssignments({ termId: activeTermId })
+      .then(data => {
+        const init = {};
+        if (Array.isArray(data)) {
+          data.forEach(a => { init[a.courseCode] = String(a.coordinatorId); });
+        }
+        setAssignments(init);
+      })
+      .catch(() => {});
+  }, [activeTermId]);
 
   const handleSave = async () => {
+    if (!activeTermId) return toast.error('No active term found');
     setSaving(true);
-
-    const finalSets = {};
-    coordinators.forEach(c => { finalSets[c.id] = new Set(c.assignedCourses || []); });
-
-    deptCourses.forEach(({ code }) => {
-      const newCoordId = assignments[code] || '';
-      const oldCoord = coordinators.find(c => (c.assignedCourses || []).includes(code));
-
-      if (oldCoord && oldCoord.id !== newCoordId) {
-        finalSets[oldCoord.id]?.delete(code);
-      }
-      if (newCoordId) {
-        if (!finalSets[newCoordId]) finalSets[newCoordId] = new Set();
-        finalSets[newCoordId].add(code);
-      }
-    });
-
-    for (const coord of coordinators) {
-      const newArr = [...(finalSets[coord.id] || new Set())];
-      const oldSorted = [...new Set(coord.assignedCourses || [])].sort().join(',');
-      const newSorted = newArr.slice().sort().join(',');
-      if (oldSorted !== newSorted) {
-        await updateUserCtx(coord.id, { assignedCourses: newArr }, user?.name || 'Dept Head');
-      }
+    try {
+      const payload = deptCourses.map(c => ({
+        courseCode: c.code,
+        coordinatorId: assignments[c.code] || '',
+      }));
+      await bulkSaveAssignments(activeTermId, payload, user?.name || 'Dept Head');
+      toast.success('Assignments saved successfully');
+    } catch (err) {
+      toast.error(err?.message || 'Failed to save assignments');
+    } finally {
+      setSaving(false);
     }
-
-    setSaving(false);
-    toast.success('Assignments saved successfully');
   };
 
   return (
@@ -773,10 +855,14 @@ const DepartmentHeadDashboard = () => {
         {activeTab === 'users' && (
           <UsersTab
             managedDepts={managedDepts}
+            deptCourses={deptCourses}
+            activeTermId={activeTermId}
             deptUsers={deptUsers}
             addUser={addUserCtx}
             updateUser={updateUserCtx}
             deleteUser={deleteUserCtx}
+            assignments={assignments}
+            setAssignments={setAssignments}
           />
         )}
 

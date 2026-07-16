@@ -298,6 +298,28 @@ export async function importCourseOfferings(payload) {
   });
 }
 
+/* ──────────────────────────── Course Assignments ──────────────────────────── */
+
+/** GET /api/course-assignments?termId=&coordinatorId=&courseCode= */
+export async function getAssignments(params = {}) {
+  const qs = new URLSearchParams();
+  if (params.termId)        qs.set("termId", params.termId);
+  if (params.coordinatorId) qs.set("coordinatorId", params.coordinatorId);
+  if (params.courseCode)    qs.set("courseCode", params.courseCode);
+  return request(`/course-assignments${qs.toString() ? `?${qs}` : ""}`);
+}
+
+/**
+ * Bulk upsert/delete assignments for a term.
+ * assignments = [{ courseCode, coordinatorId }] — empty coordinatorId removes it.
+ */
+export async function bulkSaveAssignments(termId, assignments, assignedBy) {
+  return request("/course-assignments/bulk", {
+    method: "POST",
+    body: JSON.stringify({ termId, assignments, assignedBy }),
+  });
+}
+
 /**
  * Probe whether the backend is reachable. Used so the UI can fall back
  * to local mock data when running in the hosted preview (no backend).

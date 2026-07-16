@@ -2,13 +2,14 @@ import { useState, useRef, useEffect } from 'react';
 import { departments } from '../../lib/mock-admin-data.js';
 import { useCourses } from '../../context/CoursesContext.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
+import { getAssignments, bulkSaveAssignments } from '../../services/api.js';
 import {
   Users, Search, Trash2, Plus, Upload, UserMinus, X, Check, Pencil,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
 const UserManagement = () => {
-  const { users, setUsers, addUser, updateUser: updateUserApi, deleteUser: deleteUserApi, addAuditLog, refreshAuditLogs } = useCourses();
+  const { users, setUsers, addUser, updateUser: updateUserApi, deleteUser: deleteUserApi, addAuditLog, refreshAuditLogs, academicTerms, courses } = useCourses();
   const [search, setSearch] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
@@ -17,6 +18,9 @@ const UserManagement = () => {
   const fileInputRef = useRef(null);
   const { user: currentUser } = useAuth();
   const adminName = currentUser?.name || 'Admin';
+
+  const activeTerm = (academicTerms || []).find(t => t.isActive) || (academicTerms || [])[0];
+  const activeTermId = activeTerm?._serverId || activeTerm?.id || '';
 
   const filtered = users.filter(u =>
     u.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -56,9 +60,36 @@ const UserManagement = () => {
       role: updated.role,
       department: updated.department,
       managedDepartments: updated.managedDepartments || [],
-      assignedCourses: updated.assignedCourses,
       isActive: updated.isActive,
     }, adminName);
+
+    if (updated.role === 'coordinator' && activeTermId) {
+      try {
+        const current = await getAssignments({ coordinatorId: updated.id, termId: activeTermId });
+        const currentCodes = Array.isArray(current) ? current.map(a => a.courseCode) : [];
+        const newCodes = updated.selectedCourseCodes || [];
+        const toAdd = newCodes.filter(c => !currentCodes.includes(c));
+        const toRemove = currentCodes.filter(c => !newCodes.includes(c));
+        if (toAdd.length > 0 || toRemove.length > 0) {
+          const payload = [
+            ...toAdd.map(code => ({ courseCode: code, coordinatorId: updated.id })),
+            ...toRemove.map(code => ({ courseCode: code, coordinatorId: '' })),
+          ];
+          await bulkSaveAssignments(activeTermId, payload, adminName);
+        }
+      } catch {
+        toast.error('User updated but course assignments could not be saved');
+      }
+    } else if (old?.role === 'coordinator' && updated.role !== 'coordinator' && activeTermId) {
+      // Role changed away from coordinator — clear their assignments
+      try {
+        const current = await getAssignments({ coordinatorId: updated.id, termId: activeTermId });
+        if (Array.isArray(current) && current.length > 0) {
+          await bulkSaveAssignments(activeTermId, current.map(a => ({ courseCode: a.courseCode, coordinatorId: '' })), adminName);
+        }
+      } catch {}
+    }
+
     setEditingUser(null);
     if (old && old.role !== updated.role) {
       addAuditLog({
@@ -71,12 +102,20 @@ const UserManagement = () => {
   };
 
   const unassignAllCoordinators = async () => {
-    const coords = users.filter(u => u.role === 'coordinator');
-    // Clear assignedCourses on each coordinator (do NOT delete the user).
-    for (const c of coords) {
-      // eslint-disable-next-line no-await-in-loop
-      await updateUserApi(c.id, { assignedCourses: [] }, adminName);
+    if (activeTermId) {
+      try {
+        const allAssignments = await getAssignments({ termId: activeTermId });
+        if (Array.isArray(allAssignments) && allAssignments.length > 0) {
+          const payload = allAssignments.map(a => ({ courseCode: a.courseCode, coordinatorId: '' }));
+          await bulkSaveAssignments(activeTermId, payload, adminName);
+        }
+      } catch {
+        toast.error('Failed to unassign coordinators');
+        setConfirmUnassign(false);
+        return;
+      }
     }
+    const coords = users.filter(u => u.role === 'coordinator');
     addAuditLog({
       action: 'user_role_changed',
       user: adminName,
@@ -116,11 +155,9 @@ const UserManagement = () => {
             role: validRole,
             department: cols[deptIdx] || '',
             isActive: statusIdx !== -1 ? cols[statusIdx]?.toLowerCase() !== 'inactive' : true,
-            assignedCourses: [],
           });
         }
         if (newUsers.length === 0) { toast.error('No valid users found in file'); return; }
-        // Persist each row through the backend (falls back to local on offline).
         for (const u of newUsers) {
           // eslint-disable-next-line no-await-in-loop
           await addUser(u, adminName);
@@ -190,7 +227,7 @@ const UserManagement = () => {
                       <button className="btn btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); setEditingUser({ ...u }); }} title="Edit user">
                         <Pencil size={14} />
                       </button>
-                      
+
                       <button className="btn btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); setConfirmDelete(u.id); }} title="Delete user">
                         <Trash2 size={14} color="var(--clr-danger)" />
                       </button>
@@ -210,13 +247,35 @@ const UserManagement = () => {
       <input ref={fileInputRef} type="file" accept=".csv,.xlsx" style={{ display: 'none' }} onChange={handleImport} />
 
       {/* Add User Modal */}
-      {showAddModal && <AddUserModal departments={departments} onClose={() => setShowAddModal(false)} onSave={async (u) => { await addUser(u, adminName); setShowAddModal(false); addAuditLog({ action: 'user_created', user: adminName, details: `Created user ${u.name} (${u.role})` }); toast.success('User added successfully'); }} onImport={() => { setShowAddModal(false); fileInputRef.current?.click(); }} />}
+      {showAddModal && (
+        <AddUserModal
+          departments={departments}
+          courses={courses}
+          onClose={() => setShowAddModal(false)}
+          onSave={async (u) => {
+            const result = await addUser(u, adminName);
+            if (u.role === 'coordinator' && u.selectedCourseCodes?.length > 0 && activeTermId && result?.user?._id) {
+              try {
+                const payload = u.selectedCourseCodes.map(code => ({ courseCode: code, coordinatorId: result.user._id }));
+                await bulkSaveAssignments(activeTermId, payload, adminName);
+              } catch {
+                toast.error('User created but course assignments could not be saved');
+              }
+            }
+            setShowAddModal(false);
+            addAuditLog({ action: 'user_created', user: adminName, details: `Created user ${u.name} (${u.role})` });
+            toast.success('User added successfully');
+          }}
+          onImport={() => { setShowAddModal(false); fileInputRef.current?.click(); }}
+        />
+      )}
 
       {/* Edit User Modal */}
       {editingUser && (
         <EditUserModal
           user={editingUser}
           departments={departments}
+          activeTermId={activeTermId}
           onClose={() => setEditingUser(null)}
           onSave={updateUser}
           onDelete={(id) => setConfirmDelete(id)}
@@ -245,7 +304,7 @@ const UserManagement = () => {
 };
 
 /* ── Edit User Modal ── */
-const EditUserModal = ({ user, departments, onClose, onSave, onDelete }) => {
+const EditUserModal = ({ user, departments, activeTermId, onClose, onSave, onDelete }) => {
   const { courses } = useCourses();
   const [form, setForm] = useState({ ...user });
   const [assignedCourseIds, setAssignedCourseIds] = useState([]);
@@ -253,14 +312,19 @@ const EditUserModal = ({ user, departments, onClose, onSave, onDelete }) => {
   const [courseSearch, setCourseSearch] = useState('');
   const set = (key, val) => setForm(prev => ({ ...prev, [key]: val }));
 
+  // Load current assignments from the junction table when editing a coordinator
   useEffect(() => {
-    const mapped = (user.assignedCourses || []).map((val) => {
-      const raw = String(val || '').trim();
-      const course = courses.find(c => String(c.id) === raw || String(c._serverId || '') === raw || String(c.code || '').replace(/\s+/g, '').toUpperCase() === raw.replace(/\s+/g, '').toUpperCase());
-      return course ? course.id : null;
-    }).filter(Boolean);
-    setAssignedCourseIds([...new Set(mapped)]);
-  }, [user.assignedCourses, courses]);
+    if (user.role !== 'coordinator' || !activeTermId || !user.id) return;
+    getAssignments({ coordinatorId: user.id, termId: activeTermId })
+      .then(data => {
+        if (!Array.isArray(data)) return;
+        const ids = data
+          .map(a => courses.find(c => c.code === a.courseCode)?.id)
+          .filter(Boolean);
+        setAssignedCourseIds([...new Set(ids)]);
+      })
+      .catch(() => {});
+  }, [user.id, activeTermId, user.role, courses]);
 
   const toggleCourse = (id) => {
     setAssignedCourseIds(prev => prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]);
@@ -278,9 +342,12 @@ const EditUserModal = ({ user, departments, onClose, onSave, onDelete }) => {
     if (!form.name.trim() || !form.email.trim()) { toast.error('Name and Email are required'); return; }
     if (form.role === 'coordinator' && assignedCourseIds.length === 0) { toast.error('Please assign at least one course'); return; }
     if (form.role === 'committee' && managedDepts.length === 0) { toast.error('Please select at least one managed department'); return; }
+    const selectedCourseCodes = assignedCourseIds
+      .map(id => courses.find(c => c.id === id)?.code)
+      .filter(Boolean);
     onSave({
       ...form,
-      assignedCourses: form.role === 'coordinator' ? assignedCourseIds : [],
+      selectedCourseCodes: form.role === 'coordinator' ? selectedCourseCodes : [],
       managedDepartments: form.role === 'committee' ? managedDepts : [],
     });
   };
@@ -354,6 +421,7 @@ const EditUserModal = ({ user, departments, onClose, onSave, onDelete }) => {
                 value={courseSearch}
                 onChange={e => setCourseSearch(e.target.value)}
                 style={{ marginBottom: 8 }}
+                autoComplete="new-password"
               />
               <div style={{ border: '1px solid var(--clr-border)', borderRadius: 8, maxHeight: 160, overflowY: 'auto', padding: 4 }}>
                 {filteredCourses.length === 0 && (
@@ -411,8 +479,7 @@ const EditUserModal = ({ user, departments, onClose, onSave, onDelete }) => {
 };
 
 /* ── Add User Modal ── */
-const AddUserModal = ({ departments, onClose, onSave, onImport }) => {
-  const { courses } = useCourses();
+const AddUserModal = ({ departments, courses, onClose, onSave, onImport }) => {
   const [form, setForm] = useState({ name: '', email: '', role: 'coordinator', department: departments[0] || '', isActive: true });
   const [assignedCourseIds, setAssignedCourseIds] = useState([]);
   const [managedDepts, setManagedDepts] = useState([]);
@@ -435,10 +502,13 @@ const AddUserModal = ({ departments, onClose, onSave, onImport }) => {
     if (!form.name.trim() || !form.email.trim()) { toast.error('Name and Email are required'); return; }
     if (form.role === 'coordinator' && assignedCourseIds.length === 0) { toast.error('Please assign at least one course to the coordinator'); return; }
     if (form.role === 'committee' && managedDepts.length === 0) { toast.error('Please select at least one managed department'); return; }
+    const selectedCourseCodes = assignedCourseIds
+      .map(id => courses.find(c => c.id === id)?.code)
+      .filter(Boolean);
     onSave({
       ...form,
       id: `u-${Date.now()}`,
-      assignedCourses: form.role === 'coordinator' ? assignedCourseIds : [],
+      selectedCourseCodes: form.role === 'coordinator' ? selectedCourseCodes : [],
       managedDepartments: form.role === 'committee' ? managedDepts : [],
     });
   };
@@ -511,6 +581,7 @@ const AddUserModal = ({ departments, onClose, onSave, onImport }) => {
                 value={courseSearch}
                 onChange={e => setCourseSearch(e.target.value)}
                 style={{ marginBottom: 8 }}
+                autoComplete="new-password"
               />
               <div style={{ border: '1px solid var(--clr-border)', borderRadius: 8, maxHeight: 160, overflowY: 'auto', padding: 4 }}>
                 {filteredCourses.length === 0 && (

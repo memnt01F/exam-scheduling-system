@@ -12,7 +12,6 @@ const courseSchema = new mongoose.Schema(
     name: { type: String, required: true, trim: true },
     level: { type: Number, required: true },
     department: { type: String, required: true, trim: true },
-    coordinator: { type: String, default: "" },
     status: {
       type: String,
       enum: ["active", "inactive"],
