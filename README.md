@@ -181,18 +181,18 @@ The seeded accounts are exactly the ones listed in the [Test Accounts](#test-acc
 
 Use the following credentials to log in and explore different roles.
 
-> **All accounts use the password `kfupm2026` — except the Admin account which uses `password`.**
+> **All accounts use the password `kfupm1234`.**
 
 | Name | Email | Role | Password |
 |------|-------|------|----------|
-| Admin | admin@kfupm.edu.sa | **Admin** | `password` |
-| Dr. Fatima Al-Otaibi | falotaibi@kfupm.edu.sa | Committee | `kfupm2026` |
-| Dr. Nasser Al-Mutairi | nmutairi@kfupm.edu.sa | Committee | `kfupm2026` |
-| Dr. Ahmed Al-Rashid | arashid@kfupm.edu.sa | Coordinator | `kfupm2026` |
-| Dr. Khalid Al-Dossary | kdossary@kfupm.edu.sa | Coordinator | `kfupm2026` |
-| Dr. Sara Al-Zahrani | szahrani@kfupm.edu.sa | Coordinator | `kfupm2026` |
-| Dr. Layla Al-Qahtani | lqahtani@kfupm.edu.sa | Coordinator | `kfupm2026` |
-| H. Jamaan | hjamaan@kfupm.edu.sa | Coordinator | `kfupm2026` |
+| Admin | admin@kfupm.edu.sa | **Admin** | `kfupm1234` |
+| Dr. Fatima Al-Otaibi | falotaibi@kfupm.edu.sa | Committee | `kfupm1234` |
+| Dr. Nasser Al-Mutairi | nmutairi@kfupm.edu.sa | Committee | `kfupm1234` |
+| Dr. Ahmed Al-Rashid | arashid@kfupm.edu.sa | Coordinator | `kfupm1234` |
+| Dr. Khalid Al-Dossary | kdossary@kfupm.edu.sa | Coordinator | `kfupm1234` |
+| Dr. Sara Al-Zahrani | szahrani@kfupm.edu.sa | Coordinator | `kfupm1234` |
+| Dr. Layla Al-Qahtani | lqahtani@kfupm.edu.sa | Coordinator | `kfupm1234` |
+| H. Jamaan | hjamaan@kfupm.edu.sa | Coordinator | `kfupm1234` |
 
 ---
 
@@ -202,7 +202,7 @@ Use the following credentials to log in and explore different roles.
 
 The system automatically prevents booking two courses on the same date if students are enrolled in both. To test conflict detection:
 
-1. Log in as **H. Jamaan** (`hjamaan@kfupm.edu.sa` / `kfupm2026`) — this account is assigned to **SWE206** and is ideal for testing conflicts.
+1. Log in as **H. Jamaan** (`hjamaan@kfupm.edu.sa` / `kfupm1234`) — this account is assigned to **SWE206** and is ideal for testing conflicts.
 2. Go to the **Booking Page**.
 3. Create a booking for the first course on a specific date.
 4. Try to create a booking for the second course on the **same date**.
@@ -399,7 +399,7 @@ Authenticates a user.
 ```json
 {
   "email": "arashid@kfupm.edu.sa",
-  "password": "kfupm2026"
+  "password": "kfupm1234"
 }
 ```
 
@@ -428,7 +428,7 @@ Creates a new user (Admin only).
 {
   "name": "Dr. Example",
   "email": "example@kfupm.edu.sa",
-  "password": "kfupm2026",
+  "password": "kfupm1234",
   "role": "coordinator",
   "department": "Mathematics"
 }
