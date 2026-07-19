@@ -36,11 +36,10 @@ router.get("/", async (req, res) => {
 
     if (phaseNumber !== undefined) {
       query.phaseNumber = Number(phaseNumber);
-      if (termId) query.termId = termId;
     } else {
-      // Phase 2 manual bookings
       query.phaseNumber = 2;
     }
+    if (termId) query.termId = termId;
 
     const bookings = await Booking.find(query).sort({ examDate: 1 });
     res.json(bookings);
@@ -150,7 +149,7 @@ router.post("/", async (req, res) => {
     const {
       courseCode, examDate, level,
       maleProctors = 0, femaleProctors = 0,
-      createdBy, examType, notes,
+      createdBy, examType, notes, termId,
     } = req.body || {};
 
     if (!courseCode || !examDate || level === undefined || level === null || !createdBy) {
@@ -234,6 +233,7 @@ router.post("/", async (req, res) => {
       existingAnyStatus.femaleProctors = femaleProctors;
       existingAnyStatus.createdBy = createdBy;
       existingAnyStatus.notes = notes;
+      existingAnyStatus.termId = termId || null;
       existingAnyStatus.status = "pending";
       await existingAnyStatus.save();
 
@@ -258,6 +258,7 @@ router.post("/", async (req, res) => {
       femaleProctors,
       createdBy,
       notes,
+      termId: termId || null,
       status: "pending",
       phaseNumber: 2,
     });

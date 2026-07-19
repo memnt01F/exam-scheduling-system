@@ -13,7 +13,7 @@ import ReferenceData from '../components/admin/ReferenceData.jsx';
 import SchedulingManagement from '../components/admin/SchedulingManagement.jsx';
 import AddTermModal from '../components/admin/AddTermModal.jsx';
 import ProctorSummary from '../components/admin/ProctorSummary.jsx';
-import { getEnrollmentStats, uploadEnrollments } from '../services/api.js';
+import { getEnrollmentStats, uploadEnrollments, getBookings, deleteBooking } from '../services/api.js';
 
 const tabs = [
   { id: 'users',      label: 'User Management',      icon: Users },
@@ -515,7 +515,7 @@ const ActionsDropdown = ({ isBooked, onDelete, onBook, onReschedule }) => {
 
 /* ── Booking Admin (FR-SA6) ── */
 const BookingAdmin = () => {
-  const { courses, cancelBooking, formatSlotDate, refreshAuditLogs } = useCourses();
+  const { courses, academicTerms, refreshAuditLogs } = useCourses();
   const { user } = useAuth();
   const navigate = useNavigate();
   const [confirmDelete, setConfirmDelete] = useState(null);
@@ -524,21 +524,46 @@ const BookingAdmin = () => {
   const [levelFilter, setLevelFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
+  const [selectedTermId, setSelectedTermId] = useState('');
+  const [termBookings, setTermBookings] = useState([]);
+  const [loadingBookings, setLoadingBookings] = useState(false);
+
+  useEffect(() => {
+    if (!academicTerms.length || selectedTermId) return;
+    const active = academicTerms.find(t => t.isActive) || academicTerms[0];
+    if (active) setSelectedTermId(active._serverId || active.id);
+  }, [academicTerms, selectedTermId]);
+
+  useEffect(() => {
+    if (!selectedTermId) return;
+    setLoadingBookings(true);
+    getBookings({ termId: selectedTermId, phaseNumber: 2 })
+      .then(data => setTermBookings(Array.isArray(data) ? data : []))
+      .catch(() => setTermBookings([]))
+      .finally(() => setLoadingBookings(false));
+  }, [selectedTermId]);
 
   useEffect(() => {
     const t = setTimeout(() => setSearch(searchInput), 300);
     return () => clearTimeout(t);
   }, [searchInput]);
 
-  useEffect(() => { setPage(1); }, [search, levelFilter, statusFilter]);
+  useEffect(() => { setPage(1); }, [search, levelFilter, statusFilter, selectedTermId]);
+
+  const refreshTermBookings = () => {
+    if (!selectedTermId) return;
+    getBookings({ termId: selectedTermId, phaseNumber: 2 })
+      .then(data => setTermBookings(Array.isArray(data) ? data : []))
+      .catch(() => {});
+  };
 
   const handleDelete = async () => {
     if (!confirmDelete) return;
-    await cancelBooking(confirmDelete.courseId, confirmDelete.examType, user?.name || 'Admin', 'admin');
+    await deleteBooking(confirmDelete.bookingId, { updatedBy: user?.name || 'Admin' });
     toast.success(`${confirmDelete.examType} booking deleted by admin`);
     setConfirmDelete(null);
-    // Pull the canonical CANCEL_BOOKING entry the backend just wrote.
     refreshAuditLogs();
+    refreshTermBookings();
   };
 
   const goToBooking = (courseId, examType) => {
@@ -552,11 +577,26 @@ const BookingAdmin = () => {
 
   const PAGE_SIZE = 25;
 
-  const allRows = useMemo(() => courses.map((c) => {
-    const activeType = Object.keys(c.bookings || {})[0] || null;
-    const booking = activeType ? c.bookings[activeType] : null;
-    return { course: c, type: activeType, booking };
-  }), [courses]);
+  const allRows = useMemo(() => {
+    const norm = s => String(s || '').replace(/\s+/g, '').toUpperCase();
+    const bookingMap = {};
+    for (const b of termBookings) {
+      const code = norm(b.courseCode);
+      if (!bookingMap[code]) bookingMap[code] = {};
+      bookingMap[code][b.examType || 'Major 1'] = b;
+    }
+    const rows = [];
+    courses.filter(c => c.level >= 3).forEach(c => {
+      const cBookings = bookingMap[norm(c.code)] || {};
+      const types = Object.keys(cBookings);
+      if (types.length === 0) {
+        rows.push({ course: c, type: null, booking: null });
+      } else {
+        types.forEach(type => rows.push({ course: c, type, booking: cBookings[type] }));
+      }
+    });
+    return rows;
+  }, [courses, termBookings]);
 
   const filtered = useMemo(() => allRows.filter(({ course: c, booking: b }) => {
     if (search) {
@@ -581,17 +621,19 @@ const BookingAdmin = () => {
 
       {/* Filters */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+        <select className="form-input" value={selectedTermId} onChange={e => setSelectedTermId(e.target.value)} style={{ width: 180, height: 36, fontSize: 13 }}>
+          {!academicTerms.length && <option value="">Loading terms…</option>}
+          {academicTerms.map(t => <option key={t._serverId || t.id} value={t._serverId || t.id}>{t.name}</option>)}
+        </select>
         <input
           className="form-input"
-          placeholder="Search by course code or name…"
+          placeholder="Search by course code…"
           value={searchInput}
           onChange={e => setSearchInput(e.target.value)}
-          style={{ flex: '1 1 220px', minWidth: 180, height: 36, fontSize: 13 }}
+          style={{ flex: '1 1 180px', minWidth: 160, height: 36, fontSize: 13 }}
         />
         <select className="form-input" value={levelFilter} onChange={e => setLevelFilter(e.target.value)} style={{ width: 120, height: 36, fontSize: 13 }}>
           <option value="">All Levels</option>
-          <option value="1">Level 1</option>
-          <option value="2">Level 2</option>
           <option value="3">Level 3</option>
           <option value="4">Level 4</option>
         </select>
@@ -601,6 +643,7 @@ const BookingAdmin = () => {
           <option value="not_booked">Not Booked</option>
         </select>
       </div>
+      {loadingBookings && <p className="text-sm text-muted">Loading bookings…</p>}
 
       <div className="card">
         <div className="card-content" style={{ paddingTop: 16 }}>
@@ -614,8 +657,8 @@ const BookingAdmin = () => {
               )}
               {paginated.map(({ course: c, type, booking: b }) => {
                   return (
-                    <tr key={c.id}>
-                      <td><strong>{c.code}</strong> <span className="text-xs text-muted">{c.name}</span></td>
+                    <tr key={`${c.id}-${type || 'none'}`}>
+                      <td><strong>{c.code}</strong></td>
                       <td><span className={`badge badge-level-${c.level}`}>L{c.level}</span></td>
                       <td><span className="badge badge-outline" style={{ fontSize: 10 }}>{type || '—'}</span></td>
                       <td>
@@ -623,7 +666,7 @@ const BookingAdmin = () => {
                           {b ? 'Booked' : 'Not Booked'}
                         </span>
                       </td>
-                      <td>{b ? `Week ${b.week}, ${formatSlotDate(b.week, b.day)}` : '—'}</td>
+                      <td>{b?.examDate ? new Date(b.examDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}</td>
                       <td>{b ? `${b.maleProctors}M / ${b.femaleProctors}F` : '—'}</td>
                       <td>
                         <ActionsDropdown
@@ -632,7 +675,7 @@ const BookingAdmin = () => {
                           isBooked={!!b}
                           onBook={() => goToBooking(c.id, null)}
                           onReschedule={() => goToBooking(c.id, type)}
-                          onDelete={() => setConfirmDelete({ courseId: c.id, examType: type, code: c.code })}
+                          onDelete={() => setConfirmDelete({ bookingId: b?._id, examType: type, code: c.code })}
                         />
                       </td>
                     </tr>

@@ -472,38 +472,44 @@ const UsersTab = ({ managedDepts, deptCourses, deptUsers, addUser, updateUser, d
 const BLANK_BOOKING = { courseCode: '', examType: 'Major 1', examDate: '', room: '', maleProctors: 0, femaleProctors: 0 };
 
 const BookingsTab = ({ deptCourses, authUserName }) => {
+  const { academicTerms } = useCourses();
   const [bookings, setBookings]     = useState([]);
-  const [loading, setLoading]       = useState(true);
-  const [modal, setModal]           = useState(null); // null | { mode: 'add' | 'edit', data? }
+  const [loading, setLoading]       = useState(false);
+  const [modal, setModal]           = useState(null);
   const [form, setForm]             = useState(BLANK_BOOKING);
   const [saving, setSaving]         = useState(false);
   const [search, setSearch]         = useState('');
   const [deptFilter, setDeptFilter] = useState('');
+  const [selectedTermId, setSelectedTermId] = useState('');
+
+  useEffect(() => {
+    if (!academicTerms.length || selectedTermId) return;
+    const active = academicTerms.find(t => t.isActive) || academicTerms[0];
+    if (active) setSelectedTermId(active._serverId || active.id);
+  }, [academicTerms, selectedTermId]);
 
   const depts = useMemo(() => [...new Set(deptCourses.map(c => c.department))].sort(), [deptCourses]);
   const courseByCode = useMemo(() => Object.fromEntries(deptCourses.map(c => [c.code, c])), [deptCourses]);
-
   const deptCodes = useMemo(() => new Set(deptCourses.map(c => c.code)), [deptCourses]);
 
   const fetchBookings = useCallback(async () => {
+    if (!selectedTermId) return;
     setLoading(true);
     try {
-      const all = await getBookings();
-      const deptBookings = (Array.isArray(all) ? all : []).filter(
-        b => b.phaseNumber === 2
-      ).filter(b => deptCodes.has(b.courseCode));
+      const all = await getBookings({ termId: selectedTermId, phaseNumber: 2 });
+      const deptBookings = (Array.isArray(all) ? all : []).filter(b => deptCodes.has(b.courseCode));
       setBookings(deptBookings);
     } catch {
       toast.error('Failed to load bookings');
     } finally {
       setLoading(false);
     }
-  }, [deptCodes]);
+  }, [selectedTermId, deptCodes]);
 
   useEffect(() => { fetchBookings(); }, [fetchBookings]);
 
-  const openAdd = () => {
-    setForm({ ...BLANK_BOOKING, courseCode: deptCourses[0]?.code || '' });
+  const openAdd = (courseCode = '') => {
+    setForm({ ...BLANK_BOOKING, courseCode: courseCode || deptCourses[0]?.code || '' });
     setModal({ mode: 'add' });
   };
 
@@ -520,6 +526,7 @@ const BookingsTab = ({ deptCourses, authUserName }) => {
     if (!form.examDate)   return toast.error('Select an exam date');
     setSaving(true);
     try {
+      const selectedCourse = deptCourses.find(c => c.code === form.courseCode);
       const payload = {
         courseCode:     form.courseCode,
         examType:       form.examType,
@@ -527,6 +534,8 @@ const BookingsTab = ({ deptCourses, authUserName }) => {
         room:           form.room,
         maleProctors:   Number(form.maleProctors) || 0,
         femaleProctors: Number(form.femaleProctors) || 0,
+        level:          selectedCourse?.level,
+        termId:         selectedTermId || null,
         status:         'confirmed',
         phaseNumber:    2,
         createdBy:      authUserName,
@@ -561,7 +570,6 @@ const BookingsTab = ({ deptCourses, authUserName }) => {
 
   const filtered = useMemo(() =>
     bookings.filter(b => {
-      if (b.status === 'pending') return false;
       if (deptFilter && courseByCode[b.courseCode]?.department !== deptFilter) return false;
       if (!search) return true;
       return b.courseCode.toLowerCase().includes(search.toLowerCase());
@@ -569,15 +577,36 @@ const BookingsTab = ({ deptCourses, authUserName }) => {
     [bookings, search, deptFilter, courseByCode]
   );
 
+  const bookedCodes = useMemo(() => new Set(filtered.map(b => b.courseCode)), [filtered]);
+
+  const notBookedRows = useMemo(() =>
+    deptCourses.filter(c => {
+      if (bookedCodes.has(c.code)) return false;
+      if (deptFilter && c.department !== deptFilter) return false;
+      if (search && !c.code.toLowerCase().includes(search.toLowerCase())) return false;
+      return true;
+    }),
+    [deptCourses, bookedCodes, deptFilter, search]
+  );
+
   const statusBadge = (s) => {
-    const map = { confirmed: '#16a34a', approved: 'var(--clr-primary)', rejected: '#dc2626', cancelled: 'var(--clr-muted)' };
-    const label = s === 'confirmed' ? 'Booked' : s;
-    return <span style={{ fontSize: 11, fontWeight: 600, color: map[s] || 'var(--clr-muted)', textTransform: 'capitalize' }}>{label}</span>;
+    const isBooked = s === 'confirmed' || s === 'pending';
+    if (isBooked) return (
+      <span style={{ fontSize: 11, fontWeight: 600, color: '#fff', background: 'var(--clr-primary)', borderRadius: 999, padding: '3px 10px', display: 'inline-block' }}>Booked</span>
+    );
+    if (s === 'cancelled') return (
+      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--clr-muted)', border: '1px solid var(--clr-border)', borderRadius: 999, padding: '3px 10px', display: 'inline-block' }}>Cancelled</span>
+    );
+    return <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--clr-muted)', textTransform: 'capitalize' }}>{s}</span>;
   };
 
   return (
     <div className="space-y-4">
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <select className="form-input" style={{ width: 'auto' }} value={selectedTermId} onChange={e => setSelectedTermId(e.target.value)}>
+          {!academicTerms.length && <option value="">Loading terms…</option>}
+          {academicTerms.map(t => <option key={t._serverId || t.id} value={t._serverId || t.id}>{t.name}</option>)}
+        </select>
         <div style={{ position: 'relative', flex: 1, minWidth: 180 }}>
           <Search size={14} style={{ position: 'absolute', left: 10, top: 12, color: 'var(--clr-muted)' }} />
           <input className="form-input" placeholder="Search by course…" value={search} onChange={e => setSearch(e.target.value)} style={{ paddingLeft: 30 }} />
@@ -608,7 +637,7 @@ const BookingsTab = ({ deptCourses, authUserName }) => {
                     <th>Room</th>
                     <th>Proctors (M/F)</th>
                     <th>Status</th>
-                    <th></th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -621,25 +650,47 @@ const BookingsTab = ({ deptCourses, authUserName }) => {
                       <td className="text-sm">{b.maleProctors ?? 0} / {b.femaleProctors ?? 0}</td>
                       <td>{statusBadge(b.status)}</td>
                       <td>
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          {b.status !== 'cancelled' && (
-                            <>
-                              <button className="btn btn-outline btn-sm" style={{ display: 'flex', alignItems: 'center', gap: 4 }} onClick={() => openEdit(b)}>
-                                <Pencil size={12} /> Edit
-                              </button>
-                              <button className="btn btn-outline btn-sm" style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#dc2626', borderColor: '#dc2626' }} onClick={() => handleCancel(b)}>
-                                <Trash2 size={12} /> Cancel
-                              </button>
-                            </>
-                          )}
-                        </div>
+                        {b.status !== 'cancelled' ? (
+                          <select className="form-input" style={{ width: 'auto', fontSize: 13 }}
+                            value=""
+                            onChange={e => {
+                              if (e.target.value === 'edit') openEdit(b);
+                              if (e.target.value === 'cancel') handleCancel(b);
+                              e.target.value = '';
+                            }}>
+                            <option value="">Select action</option>
+                            <option value="edit">Edit</option>
+                            <option value="cancel">Cancel</option>
+                          </select>
+                        ) : <span style={{ fontSize: 12, color: 'var(--clr-muted)' }}>—</span>}
                       </td>
                     </tr>
                   ))}
-                  {filtered.length === 0 && (
+                  {notBookedRows.map(c => (
+                    <tr key={`nb-${c.code}`}>
+                      <td className="font-medium">{c.code}</td>
+                      <td className="text-sm" style={{ color: 'var(--clr-muted)' }}>—</td>
+                      <td className="text-sm" style={{ color: 'var(--clr-muted)' }}>—</td>
+                      <td className="text-sm" style={{ color: 'var(--clr-muted)' }}>—</td>
+                      <td className="text-sm" style={{ color: 'var(--clr-muted)' }}>—</td>
+                      <td><span style={{ fontSize: 11, fontWeight: 600, color: 'var(--clr-muted)', border: '1px solid var(--clr-border)', borderRadius: 999, padding: '3px 10px', display: 'inline-block' }}>Not Booked</span></td>
+                      <td>
+                        <select className="form-input" style={{ width: 'auto', fontSize: 13 }}
+                          value=""
+                          onChange={e => {
+                            if (e.target.value === 'book') openAdd(c.code);
+                            e.target.value = '';
+                          }}>
+                          <option value="">Select action</option>
+                          <option value="book">Book</option>
+                        </select>
+                      </td>
+                    </tr>
+                  ))}
+                  {filtered.length === 0 && notBookedRows.length === 0 && (
                     <tr>
                       <td colSpan={7} style={{ textAlign: 'center', padding: 24, color: 'var(--clr-muted)' }}>
-                        No Phase 2 bookings found for your department{deptCourses.length !== 1 ? 's' : ''}
+                        No courses found for your department{deptCourses.length !== 1 ? 's' : ''}
                       </td>
                     </tr>
                   )}
@@ -720,7 +771,7 @@ const CalendarTab = () => {
     if (!selectedTermId) return;
     setLoading(true);
     getScheduledExams({ termId: selectedTermId, phase: 0 })
-      .then(data => setExams(Array.isArray(data) ? data : []))
+      .then(data => setExams(Array.isArray(data) ? data.filter(e => e.status !== 'pending') : []))
       .catch(() => setExams([]))
       .finally(() => setLoading(false));
   }, [selectedTermId]);

@@ -40,8 +40,11 @@ async function request(path, options = {}) {
 
 /* ──────────────────────────── Bookings ──────────────────────────── */
 
-export async function getBookings() {
-  return request("/bookings");
+export async function getBookings(params = {}) {
+  const qs = new URLSearchParams();
+  if (params.termId)                    qs.set('termId', params.termId);
+  if (params.phaseNumber !== undefined) qs.set('phaseNumber', params.phaseNumber);
+  return request(`/bookings${qs.toString() ? `?${qs}` : ''}`);
 }
 
 /**
