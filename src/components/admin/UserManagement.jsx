@@ -9,7 +9,7 @@ import {
 import { toast } from 'sonner';
 
 const UserManagement = () => {
-  const { users, setUsers, addUser, updateUser: updateUserApi, deleteUser: deleteUserApi, addAuditLog, refreshAuditLogs, academicTerms, courses } = useCourses();
+  const { users, setUsers, addUser, updateUser: updateUserApi, deleteUser: deleteUserApi, addAuditLog, refreshAuditLogs, courses } = useCourses();
   const [search, setSearch] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
@@ -18,9 +18,6 @@ const UserManagement = () => {
   const fileInputRef = useRef(null);
   const { user: currentUser } = useAuth();
   const adminName = currentUser?.name || 'Admin';
-
-  const activeTerm = (academicTerms || []).find(t => t.isActive) || (academicTerms || [])[0];
-  const activeTermId = activeTerm?._serverId || activeTerm?.id || '';
 
   const filtered = users.filter(u =>
     u.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -63,9 +60,9 @@ const UserManagement = () => {
       isActive: updated.isActive,
     }, adminName);
 
-    if (updated.role === 'coordinator' && activeTermId) {
+    if (updated.role === 'coordinator') {
       try {
-        const current = await getAssignments({ coordinatorId: updated.id, termId: activeTermId });
+        const current = await getAssignments({ coordinatorId: updated.id });
         const currentCodes = Array.isArray(current) ? current.map(a => a.courseCode) : [];
         const newCodes = updated.selectedCourseCodes || [];
         const toAdd = newCodes.filter(c => !currentCodes.includes(c));
@@ -75,17 +72,16 @@ const UserManagement = () => {
             ...toAdd.map(code => ({ courseCode: code, coordinatorId: updated.id })),
             ...toRemove.map(code => ({ courseCode: code, coordinatorId: '' })),
           ];
-          await bulkSaveAssignments(activeTermId, payload, adminName);
+          await bulkSaveAssignments(payload, adminName);
         }
       } catch {
         toast.error('User updated but course assignments could not be saved');
       }
-    } else if (old?.role === 'coordinator' && updated.role !== 'coordinator' && activeTermId) {
-      // Role changed away from coordinator — clear their assignments
+    } else if (old?.role === 'coordinator' && updated.role !== 'coordinator') {
       try {
-        const current = await getAssignments({ coordinatorId: updated.id, termId: activeTermId });
+        const current = await getAssignments({ coordinatorId: updated.id });
         if (Array.isArray(current) && current.length > 0) {
-          await bulkSaveAssignments(activeTermId, current.map(a => ({ courseCode: a.courseCode, coordinatorId: '' })), adminName);
+          await bulkSaveAssignments(current.map(a => ({ courseCode: a.courseCode, coordinatorId: '' })), adminName);
         }
       } catch {}
     }
@@ -102,18 +98,16 @@ const UserManagement = () => {
   };
 
   const unassignAllCoordinators = async () => {
-    if (activeTermId) {
-      try {
-        const allAssignments = await getAssignments({ termId: activeTermId });
-        if (Array.isArray(allAssignments) && allAssignments.length > 0) {
-          const payload = allAssignments.map(a => ({ courseCode: a.courseCode, coordinatorId: '' }));
-          await bulkSaveAssignments(activeTermId, payload, adminName);
-        }
-      } catch {
-        toast.error('Failed to unassign coordinators');
-        setConfirmUnassign(false);
-        return;
+    try {
+      const allAssignments = await getAssignments();
+      if (Array.isArray(allAssignments) && allAssignments.length > 0) {
+        const payload = allAssignments.map(a => ({ courseCode: a.courseCode, coordinatorId: '' }));
+        await bulkSaveAssignments(payload, adminName);
       }
+    } catch {
+      toast.error('Failed to unassign coordinators');
+      setConfirmUnassign(false);
+      return;
     }
     const coords = users.filter(u => u.role === 'coordinator');
     addAuditLog({
@@ -254,10 +248,10 @@ const UserManagement = () => {
           onClose={() => setShowAddModal(false)}
           onSave={async (u) => {
             const result = await addUser(u, adminName);
-            if (u.role === 'coordinator' && u.selectedCourseCodes?.length > 0 && activeTermId && result?.user?._id) {
+            if (u.role === 'coordinator' && u.selectedCourseCodes?.length > 0 && result?.user?._id) {
               try {
                 const payload = u.selectedCourseCodes.map(code => ({ courseCode: code, coordinatorId: result.user._id }));
-                await bulkSaveAssignments(activeTermId, payload, adminName);
+                await bulkSaveAssignments(payload, adminName);
               } catch {
                 toast.error('User created but course assignments could not be saved');
               }
@@ -275,7 +269,6 @@ const UserManagement = () => {
         <EditUserModal
           user={editingUser}
           departments={departments}
-          activeTermId={activeTermId}
           onClose={() => setEditingUser(null)}
           onSave={updateUser}
           onDelete={(id) => setConfirmDelete(id)}
@@ -304,7 +297,7 @@ const UserManagement = () => {
 };
 
 /* ── Edit User Modal ── */
-const EditUserModal = ({ user, departments, activeTermId, onClose, onSave, onDelete }) => {
+const EditUserModal = ({ user, departments, onClose, onSave, onDelete }) => {
   const { courses } = useCourses();
   const [form, setForm] = useState({ ...user });
   const [assignedCourseIds, setAssignedCourseIds] = useState([]);
@@ -314,8 +307,8 @@ const EditUserModal = ({ user, departments, activeTermId, onClose, onSave, onDel
 
   // Load current assignments from the junction table when editing a coordinator
   useEffect(() => {
-    if (user.role !== 'coordinator' || !activeTermId || !user.id) return;
-    getAssignments({ coordinatorId: user.id, termId: activeTermId })
+    if (user.role !== 'coordinator' || !user.id) return;
+    getAssignments({ coordinatorId: user.id })
       .then(data => {
         if (!Array.isArray(data)) return;
         const ids = data
@@ -324,7 +317,7 @@ const EditUserModal = ({ user, departments, activeTermId, onClose, onSave, onDel
         setAssignedCourseIds([...new Set(ids)]);
       })
       .catch(() => {});
-  }, [user.id, activeTermId, user.role, courses]);
+  }, [user.id, user.role, courses]);
 
   const toggleCourse = (id) => {
     setAssignedCourseIds(prev => prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]);

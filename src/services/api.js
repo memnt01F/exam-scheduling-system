@@ -300,23 +300,22 @@ export async function importCourseOfferings(payload) {
 
 /* ──────────────────────────── Course Assignments ──────────────────────────── */
 
-/** GET /api/course-assignments?termId=&coordinatorId=&courseCode= */
+/** GET /api/course-assignments?coordinatorId=&courseCode= */
 export async function getAssignments(params = {}) {
   const qs = new URLSearchParams();
-  if (params.termId)        qs.set("termId", params.termId);
   if (params.coordinatorId) qs.set("coordinatorId", params.coordinatorId);
   if (params.courseCode)    qs.set("courseCode", params.courseCode);
   return request(`/course-assignments${qs.toString() ? `?${qs}` : ""}`);
 }
 
 /**
- * Bulk upsert/delete assignments for a term.
+ * Bulk upsert/delete assignments.
  * assignments = [{ courseCode, coordinatorId }] — empty coordinatorId removes it.
  */
-export async function bulkSaveAssignments(termId, assignments, assignedBy) {
+export async function bulkSaveAssignments(assignments, assignedBy) {
   return request("/course-assignments/bulk", {
     method: "POST",
-    body: JSON.stringify({ termId, assignments, assignedBy }),
+    body: JSON.stringify({ assignments, assignedBy }),
   });
 }
 

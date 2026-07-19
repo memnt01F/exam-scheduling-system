@@ -3,12 +3,11 @@ const CourseAssignment = require("../models/courseAssignment.model");
 
 const router = express.Router();
 
-/** GET /api/course-assignments?termId=&coordinatorId=&courseCode= */
+/** GET /api/course-assignments?coordinatorId=&courseCode= */
 router.get("/", async (req, res) => {
   try {
-    const { termId, coordinatorId, courseCode } = req.query;
+    const { coordinatorId, courseCode } = req.query;
     const query = {};
-    if (termId)        query.termId = termId;
     if (coordinatorId) query.coordinatorId = coordinatorId;
     if (courseCode)    query.courseCode = String(courseCode).toUpperCase().trim();
 
@@ -22,14 +21,14 @@ router.get("/", async (req, res) => {
 /** POST /api/course-assignments — upsert one assignment */
 router.post("/", async (req, res) => {
   try {
-    const { courseCode, coordinatorId, termId, assignedBy } = req.body || {};
-    if (!courseCode || !coordinatorId || !termId) {
-      return res.status(400).json({ message: "courseCode, coordinatorId, and termId are required" });
+    const { courseCode, coordinatorId, assignedBy } = req.body || {};
+    if (!courseCode || !coordinatorId) {
+      return res.status(400).json({ message: "courseCode and coordinatorId are required" });
     }
     const normalized = String(courseCode).trim().toUpperCase();
     const assignment = await CourseAssignment.findOneAndUpdate(
-      { courseCode: normalized, termId },
-      { courseCode: normalized, coordinatorId, termId, assignedBy: assignedBy || "" },
+      { courseCode: normalized },
+      { courseCode: normalized, coordinatorId, assignedBy: assignedBy || "" },
       { upsert: true, new: true }
     );
     res.status(201).json(assignment);
@@ -40,13 +39,12 @@ router.post("/", async (req, res) => {
 
 /**
  * POST /api/course-assignments/bulk
- * body: { termId, assignments: [{ courseCode, coordinatorId }], assignedBy }
+ * body: { assignments: [{ courseCode, coordinatorId }], assignedBy }
  * Empty coordinatorId = delete that assignment.
  */
 router.post("/bulk", async (req, res) => {
   try {
-    const { termId, assignments = [], assignedBy } = req.body || {};
-    if (!termId) return res.status(400).json({ message: "termId is required" });
+    const { assignments = [], assignedBy } = req.body || {};
 
     let upserted = 0;
     let deleted = 0;
@@ -56,13 +54,13 @@ router.post("/bulk", async (req, res) => {
       if (!normalized) continue;
       if (coordinatorId) {
         await CourseAssignment.findOneAndUpdate(
-          { courseCode: normalized, termId },
-          { courseCode: normalized, coordinatorId, termId, assignedBy: assignedBy || "" },
+          { courseCode: normalized },
+          { courseCode: normalized, coordinatorId, assignedBy: assignedBy || "" },
           { upsert: true, new: true }
         );
         upserted++;
       } else {
-        await CourseAssignment.deleteOne({ courseCode: normalized, termId });
+        await CourseAssignment.deleteOne({ courseCode: normalized });
         deleted++;
       }
     }

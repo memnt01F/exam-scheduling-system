@@ -203,7 +203,7 @@ const AssignmentsTab = ({ deptCourses, coordinators, assignments, setAssignments
 /* ── Users tab ── */
 const BLANK_USER = { name: '', email: '', password: '', department: '', isActive: true, selectedCourseCodes: [] };
 
-const UsersTab = ({ managedDepts, deptCourses, activeTermId, deptUsers, addUser, updateUser, deleteUser, assignments, setAssignments }) => {
+const UsersTab = ({ managedDepts, deptCourses, deptUsers, addUser, updateUser, deleteUser, assignments, setAssignments }) => {
   const { user: authUser } = useAuth();
   const [modal, setModal] = useState(null);
   const [form, setForm]   = useState(BLANK_USER);
@@ -248,10 +248,10 @@ const UsersTab = ({ managedDepts, deptCourses, activeTermId, deptUsers, addUser,
       );
       if (res?.success === false) { setSaving(false); return; }
       const newUserId = res?.user?._id;
-      if (newUserId && activeTermId && form.selectedCourseCodes.length > 0) {
+      if (newUserId && form.selectedCourseCodes.length > 0) {
         try {
           const payload = form.selectedCourseCodes.map(code => ({ courseCode: code, coordinatorId: newUserId }));
-          await bulkSaveAssignments(activeTermId, payload, authUser?.name || 'Dept Head');
+          await bulkSaveAssignments(payload, authUser?.name || 'Dept Head');
           setAssignments(prev => {
             const next = { ...prev };
             form.selectedCourseCodes.forEach(code => { next[code] = newUserId; });
@@ -265,7 +265,7 @@ const UsersTab = ({ managedDepts, deptCourses, activeTermId, deptUsers, addUser,
       if (form.password.trim()) patch.password = form.password;
       const res = await updateUser(modal.data.id, patch, authUser?.name || 'Dept Head');
       if (res?.success === false) { setSaving(false); return; }
-      if (activeTermId) {
+      {
         const currentCodes = Object.entries(assignments || {}).filter(([, id]) => id === modal.data.id).map(([code]) => code);
         const newCodes = form.selectedCourseCodes;
         const toAdd = newCodes.filter(c => !currentCodes.includes(c));
@@ -276,7 +276,7 @@ const UsersTab = ({ managedDepts, deptCourses, activeTermId, deptUsers, addUser,
               ...toAdd.map(code => ({ courseCode: code, coordinatorId: modal.data.id })),
               ...toRemove.map(code => ({ courseCode: code, coordinatorId: '' })),
             ];
-            await bulkSaveAssignments(activeTermId, payload, authUser?.name || 'Dept Head');
+            await bulkSaveAssignments(payload, authUser?.name || 'Dept Head');
             setAssignments(prev => {
               const next = { ...prev };
               toRemove.forEach(code => delete next[code]);
@@ -752,7 +752,7 @@ const CalendarTab = () => {
 /* ── Main Dashboard ── */
 const DepartmentHeadDashboard = () => {
   const { user } = useAuth();
-  const { courses, users, academicTerms, updateUser: updateUserCtx, addUser: addUserCtx, deleteUser: deleteUserCtx } = useCourses();
+  const { courses, users, updateUser: updateUserCtx, addUser: addUserCtx, deleteUser: deleteUserCtx } = useCourses();
 
   const liveUser    = users.find(u => u.email === user?.email);
   const managedDepts = liveUser?.managedDepartments || [];
@@ -780,13 +780,9 @@ const DepartmentHeadDashboard = () => {
   const [assignments, setAssignments] = useState({});
   const [saving, setSaving] = useState(false);
 
-  const activeTerm = academicTerms.find(t => t.isActive) || academicTerms[0];
-  const activeTermId = activeTerm?._serverId || activeTerm?.id || '';
-
-  // Load assignments from the junction table when the active term is known
+  // Load all assignments globally (no term filter)
   useEffect(() => {
-    if (!activeTermId) return;
-    getAssignments({ termId: activeTermId })
+    getAssignments()
       .then(data => {
         const init = {};
         if (Array.isArray(data)) {
@@ -795,17 +791,16 @@ const DepartmentHeadDashboard = () => {
         setAssignments(init);
       })
       .catch(() => {});
-  }, [activeTermId]);
+  }, []);
 
   const handleSave = async () => {
-    if (!activeTermId) return toast.error('No active term found');
     setSaving(true);
     try {
       const payload = deptCourses.map(c => ({
         courseCode: c.code,
         coordinatorId: assignments[c.code] || '',
       }));
-      await bulkSaveAssignments(activeTermId, payload, user?.name || 'Dept Head');
+      await bulkSaveAssignments(payload, user?.name || 'Dept Head');
       toast.success('Assignments saved successfully');
     } catch (err) {
       toast.error(err?.message || 'Failed to save assignments');
@@ -856,7 +851,6 @@ const DepartmentHeadDashboard = () => {
           <UsersTab
             managedDepts={managedDepts}
             deptCourses={deptCourses}
-            activeTermId={activeTermId}
             deptUsers={deptUsers}
             addUser={addUserCtx}
             updateUser={updateUserCtx}
