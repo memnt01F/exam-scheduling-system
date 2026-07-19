@@ -527,7 +527,7 @@ const BookingsTab = ({ deptCourses, authUserName }) => {
         room:           form.room,
         maleProctors:   Number(form.maleProctors) || 0,
         femaleProctors: Number(form.femaleProctors) || 0,
-        status:         'pending',
+        status:         'confirmed',
         phaseNumber:    2,
         createdBy:      authUserName,
         updatedBy:      authUserName,
@@ -561,6 +561,7 @@ const BookingsTab = ({ deptCourses, authUserName }) => {
 
   const filtered = useMemo(() =>
     bookings.filter(b => {
+      if (b.status === 'pending') return false;
       if (deptFilter && courseByCode[b.courseCode]?.department !== deptFilter) return false;
       if (!search) return true;
       return b.courseCode.toLowerCase().includes(search.toLowerCase());
@@ -569,8 +570,9 @@ const BookingsTab = ({ deptCourses, authUserName }) => {
   );
 
   const statusBadge = (s) => {
-    const map = { pending: '#e68a00', approved: 'var(--clr-primary)', rejected: '#dc2626', cancelled: 'var(--clr-muted)' };
-    return <span style={{ fontSize: 11, fontWeight: 600, color: map[s] || 'var(--clr-muted)', textTransform: 'capitalize' }}>{s}</span>;
+    const map = { confirmed: '#16a34a', approved: 'var(--clr-primary)', rejected: '#dc2626', cancelled: 'var(--clr-muted)' };
+    const label = s === 'confirmed' ? 'Booked' : s;
+    return <span style={{ fontSize: 11, fontWeight: 600, color: map[s] || 'var(--clr-muted)', textTransform: 'capitalize' }}>{label}</span>;
   };
 
   return (

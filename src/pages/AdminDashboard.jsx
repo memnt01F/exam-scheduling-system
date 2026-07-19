@@ -20,9 +20,9 @@ const tabs = [
   { id: 'settings',   label: 'System Settings',       icon: Settings },
   { id: 'refdata',    label: 'Reference Data',        icon: Database },
   { id: 'scheduling', label: 'Scheduling Management', icon: Calendar },
-  { id: 'audit',      label: 'Audit Logs',            icon: ClipboardList },
   { id: 'bookings',   label: 'Bookings',              icon: BookOpen },
   { id: 'proctors',   label: 'Proctor Summary',       icon: UserCheck },
+  { id: 'audit',      label: 'Audit Logs',            icon: ClipboardList },
 ];
 
 /* (AddTermModal is now imported from src/components/admin/AddTermModal.jsx) */
