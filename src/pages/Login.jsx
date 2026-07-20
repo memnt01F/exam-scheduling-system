@@ -5,7 +5,7 @@ import { ClipboardList, Shield, Eye, EyeOff } from 'lucide-react';
 
 const ROLE_PATHS = {
   coordinator: '/dashboard',
-  committee: '/committee',
+  deptHead: '/dept-head',
   admin: '/admin',
 };
 

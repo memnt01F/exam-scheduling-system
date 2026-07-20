@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout.jsx';
 import SchedulingManagement from '../components/admin/SchedulingManagement.jsx';
 import ProctorSummary from '../components/admin/ProctorSummary.jsx';
@@ -473,24 +474,34 @@ const BLANK_BOOKING = { courseCode: '', examType: 'Major 1', examDate: '', room:
 
 const BookingsTab = ({ deptCourses, authUserName }) => {
   const { academicTerms } = useCourses();
+  const navigate = useNavigate();
   const [bookings, setBookings]     = useState([]);
   const [loading, setLoading]       = useState(false);
-  const [modal, setModal]           = useState(null);
-  const [form, setForm]             = useState(BLANK_BOOKING);
-  const [saving, setSaving]         = useState(false);
   const [search, setSearch]         = useState('');
   const [deptFilter, setDeptFilter] = useState('');
-  const [selectedTermId, setSelectedTermId] = useState('');
+  const [levelFilter, setLevelFilter] = useState('');
+  const [selectedTermId, setSelectedTermId] = useState(() => localStorage.getItem('depthead_bookings_termId') || '');
+
+  const handleTermChange = (id) => {
+    setSelectedTermId(id);
+    localStorage.setItem('depthead_bookings_termId', id);
+  };
 
   useEffect(() => {
     if (!academicTerms.length || selectedTermId) return;
     const active = academicTerms.find(t => t.isActive) || academicTerms[0];
-    if (active) setSelectedTermId(active._serverId || active.id);
+    if (active) {
+      const id = active._serverId || active.id;
+      setSelectedTermId(id);
+      localStorage.setItem('depthead_bookings_termId', id);
+    }
   }, [academicTerms, selectedTermId]);
 
-  const depts = useMemo(() => [...new Set(deptCourses.map(c => c.department))].sort(), [deptCourses]);
-  const courseByCode = useMemo(() => Object.fromEntries(deptCourses.map(c => [c.code, c])), [deptCourses]);
-  const deptCodes = useMemo(() => new Set(deptCourses.map(c => c.code)), [deptCourses]);
+  const phase2Courses = useMemo(() => deptCourses.filter(c => c.level >= 3), [deptCourses]);
+
+  const depts = useMemo(() => [...new Set(phase2Courses.map(c => c.department))].sort(), [phase2Courses]);
+  const courseByCode = useMemo(() => Object.fromEntries(phase2Courses.map(c => [c.code, c])), [phase2Courses]);
+  const deptCodes = useMemo(() => new Set(phase2Courses.map(c => c.code)), [phase2Courses]);
 
   const fetchBookings = useCallback(async () => {
     if (!selectedTermId) return;
@@ -508,53 +519,18 @@ const BookingsTab = ({ deptCourses, authUserName }) => {
 
   useEffect(() => { fetchBookings(); }, [fetchBookings]);
 
-  const openAdd = (courseCode = '') => {
-    setForm({ ...BLANK_BOOKING, courseCode: courseCode || deptCourses[0]?.code || '' });
-    setModal({ mode: 'add' });
-  };
-
-  const openEdit = (b) => {
-    const dateStr = b.examDate ? new Date(b.examDate).toISOString().slice(0, 10) : '';
-    setForm({ courseCode: b.courseCode, examType: b.examType, examDate: dateStr, room: b.room || '', maleProctors: b.maleProctors || 0, femaleProctors: b.femaleProctors || 0 });
-    setModal({ mode: 'edit', data: b });
-  };
-
-  const closeModal = () => { setModal(null); setForm(BLANK_BOOKING); };
-
-  const handleSave = async () => {
-    if (!form.courseCode) return toast.error('Select a course');
-    if (!form.examDate)   return toast.error('Select an exam date');
-    setSaving(true);
-    try {
-      const selectedCourse = deptCourses.find(c => c.code === form.courseCode);
-      const payload = {
-        courseCode:     form.courseCode,
-        examType:       form.examType,
-        examDate:       form.examDate,
-        room:           form.room,
-        maleProctors:   Number(form.maleProctors) || 0,
-        femaleProctors: Number(form.femaleProctors) || 0,
-        level:          selectedCourse?.level,
-        termId:         selectedTermId || null,
-        status:         'confirmed',
-        phaseNumber:    2,
-        createdBy:      authUserName,
-        updatedBy:      authUserName,
-      };
-      if (modal.mode === 'add') {
-        await createBooking(payload);
-        toast.success('Booking created');
-      } else {
-        await updateBooking(modal.data._id || modal.data.id, { ...payload, updatedBy: authUserName });
-        toast.success('Booking updated');
-      }
-      await fetchBookings();
-      closeModal();
-    } catch (err) {
-      toast.error(err?.data?.message || err?.message || 'Failed to save booking');
-    } finally {
-      setSaving(false);
+  const goToBooking = (course, booking = null, presetType = null) => {
+    const qs = new URLSearchParams();
+    qs.set('from', 'deptHead');
+    qs.set('phase', '2');
+    if (selectedTermId) qs.set('termId', selectedTermId);
+    if (booking) {
+      qs.set('examType', booking.examType);
+      qs.set('bookingId', booking._id);
+    } else if (presetType) {
+      qs.set('examType', presetType);
     }
+    navigate(`/booking/${course.id}?${qs.toString()}`);
   };
 
   const handleCancel = async (b) => {
@@ -568,42 +544,28 @@ const BookingsTab = ({ deptCourses, authUserName }) => {
     }
   };
 
-  const filtered = useMemo(() =>
-    bookings.filter(b => {
-      if (deptFilter && courseByCode[b.courseCode]?.department !== deptFilter) return false;
-      if (!search) return true;
-      return b.courseCode.toLowerCase().includes(search.toLowerCase());
-    }),
-    [bookings, search, deptFilter, courseByCode]
-  );
+  const PHASE2_EXAM_TYPES = ['Major 1', 'Major 2', 'Mid'];
 
-  const bookedCodes = useMemo(() => new Set(filtered.map(b => b.courseCode)), [filtered]);
-
-  const notBookedRows = useMemo(() =>
-    deptCourses.filter(c => {
-      if (bookedCodes.has(c.code)) return false;
-      if (deptFilter && c.department !== deptFilter) return false;
-      if (search && !c.code.toLowerCase().includes(search.toLowerCase())) return false;
-      return true;
-    }),
-    [deptCourses, bookedCodes, deptFilter, search]
-  );
-
-  const statusBadge = (s) => {
-    const isBooked = s === 'confirmed' || s === 'pending';
-    if (isBooked) return (
-      <span style={{ fontSize: 11, fontWeight: 600, color: '#fff', background: 'var(--clr-primary)', borderRadius: 999, padding: '3px 10px', display: 'inline-block' }}>Booked</span>
-    );
-    if (s === 'cancelled') return (
-      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--clr-muted)', border: '1px solid var(--clr-border)', borderRadius: 999, padding: '3px 10px', display: 'inline-block' }}>Cancelled</span>
-    );
-    return <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--clr-muted)', textTransform: 'capitalize' }}>{s}</span>;
-  };
+  const allRows = useMemo(() => {
+    const byCode = {};
+    bookings.forEach(b => {
+      if (!byCode[b.courseCode]) byCode[b.courseCode] = {};
+      byCode[b.courseCode][b.examType] = b;
+    });
+    return phase2Courses
+      .filter(c => {
+        if (levelFilter && c.level !== Number(levelFilter)) return false;
+        if (deptFilter && c.department !== deptFilter) return false;
+        if (search && !c.code.toLowerCase().includes(search.toLowerCase())) return false;
+        return true;
+      })
+      .map(c => ({ course: c, bookingsByType: byCode[c.code] || {} }));
+  }, [phase2Courses, bookings, levelFilter, deptFilter, search]);
 
   return (
     <div className="space-y-4">
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <select className="form-input" style={{ width: 'auto' }} value={selectedTermId} onChange={e => setSelectedTermId(e.target.value)}>
+        <select className="form-input" style={{ width: 'auto' }} value={selectedTermId} onChange={e => handleTermChange(e.target.value)}>
           {!academicTerms.length && <option value="">Loading terms…</option>}
           {academicTerms.map(t => <option key={t._serverId || t.id} value={t._serverId || t.id}>{t.name}</option>)}
         </select>
@@ -611,13 +573,24 @@ const BookingsTab = ({ deptCourses, authUserName }) => {
           <Search size={14} style={{ position: 'absolute', left: 10, top: 12, color: 'var(--clr-muted)' }} />
           <input className="form-input" placeholder="Search by course…" value={search} onChange={e => setSearch(e.target.value)} style={{ paddingLeft: 30 }} />
         </div>
+        <select className="form-input" style={{ width: 'auto' }} value={levelFilter} onChange={e => setLevelFilter(e.target.value)}>
+          <option value="">All Levels</option>
+          <option value="3">Level 3</option>
+          <option value="4">Level 4</option>
+        </select>
         {depts.length > 1 && (
           <select className="form-input" style={{ width: 'auto' }} value={deptFilter} onChange={e => setDeptFilter(e.target.value)}>
             <option value="">All Departments</option>
             {depts.map(d => <option key={d} value={d}>{d}</option>)}
           </select>
         )}
-        <button className="btn btn-primary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }} onClick={openAdd}>
+        <button className="btn btn-primary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }} onClick={() => {
+          const row = allRows.find(r => PHASE2_EXAM_TYPES.some(t => !r.bookingsByType[t] || r.bookingsByType[t].status === 'cancelled'));
+          if (row) {
+            const type = PHASE2_EXAM_TYPES.find(t => !row.bookingsByType[t] || row.bookingsByType[t].status === 'cancelled');
+            goToBooking(row.course, null, type);
+          }
+        }}>
           <Plus size={14} /> Add Booking
         </button>
       </div>
@@ -632,65 +605,97 @@ const BookingsTab = ({ deptCourses, authUserName }) => {
                 <thead>
                   <tr>
                     <th>Course</th>
-                    <th>Exam Type</th>
-                    <th>Date</th>
-                    <th>Room</th>
-                    <th>Proctors (M/F)</th>
+                    <th>Level</th>
                     <th>Status</th>
+                    <th>Scheduled</th>
+                    <th>Proctors</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map(b => (
-                    <tr key={b._id || b.id}>
-                      <td className="font-medium">{b.courseCode}</td>
-                      <td className="text-sm">{b.examType}</td>
-                      <td className="text-sm">{b.examDate ? new Date(b.examDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}</td>
-                      <td className="text-sm">{b.room || '—'}</td>
-                      <td className="text-sm">{b.maleProctors ?? 0} / {b.femaleProctors ?? 0}</td>
-                      <td>{statusBadge(b.status)}</td>
-                      <td>
-                        {b.status !== 'cancelled' ? (
-                          <select className="form-input" style={{ width: 'auto', fontSize: 13 }}
-                            value=""
-                            onChange={e => {
-                              if (e.target.value === 'edit') openEdit(b);
-                              if (e.target.value === 'cancel') handleCancel(b);
-                              e.target.value = '';
-                            }}>
-                            <option value="">Select action</option>
-                            <option value="edit">Edit</option>
-                            <option value="cancel">Cancel</option>
-                          </select>
-                        ) : <span style={{ fontSize: 12, color: 'var(--clr-muted)' }}>—</span>}
-                      </td>
-                    </tr>
-                  ))}
-                  {notBookedRows.map(c => (
-                    <tr key={`nb-${c.code}`}>
-                      <td className="font-medium">{c.code}</td>
-                      <td className="text-sm" style={{ color: 'var(--clr-muted)' }}>—</td>
-                      <td className="text-sm" style={{ color: 'var(--clr-muted)' }}>—</td>
-                      <td className="text-sm" style={{ color: 'var(--clr-muted)' }}>—</td>
-                      <td className="text-sm" style={{ color: 'var(--clr-muted)' }}>—</td>
-                      <td><span style={{ fontSize: 11, fontWeight: 600, color: 'var(--clr-muted)', border: '1px solid var(--clr-border)', borderRadius: 999, padding: '3px 10px', display: 'inline-block' }}>Not Booked</span></td>
-                      <td>
-                        <select className="form-input" style={{ width: 'auto', fontSize: 13 }}
-                          value=""
-                          onChange={e => {
-                            if (e.target.value === 'book') openAdd(c.code);
+                  {allRows.map(({ course: c, bookingsByType }) => {
+                    const isActive = t => bookingsByType[t] && bookingsByType[t].status !== 'cancelled';
+                    const majorActive = ['Major 1', 'Major 2'].some(isActive);
+                    const midActive = isActive('Mid');
+                    const activeBookings = PHASE2_EXAM_TYPES.map(t => bookingsByType[t]).filter(b => b && b.status !== 'cancelled');
+                    const earliest = [...activeBookings].sort((a, b) => new Date(a.examDate) - new Date(b.examDate))[0];
+
+                    const visibleTypes = PHASE2_EXAM_TYPES.filter(t => {
+                      if (t === 'Mid' && majorActive) return false;
+                      if ((t === 'Major 1' || t === 'Major 2') && midActive) return false;
+                      return true;
+                    });
+                    const bookableTypes = visibleTypes.filter(t => !isActive(t));
+                    const manageableTypes = PHASE2_EXAM_TYPES.filter(isActive);
+
+                    const fmtDate = d => new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+                    return (
+                      <tr key={c.id}>
+                        <td><strong>{c.code}</strong></td>
+                        <td><span className={`badge badge-level-${c.level}`}>L{c.level}</span></td>
+                        <td>
+                          {manageableTypes.length === 0 ? (
+                            <span style={{ color: 'var(--clr-muted)' }}>—</span>
+                          ) : (
+                            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                              {manageableTypes.map(type => {
+                                const label = type === 'Major 1' ? 'M1' : type === 'Major 2' ? 'M2' : 'Mid';
+                                return <span key={type} className="badge badge-primary" style={{ fontSize: 10 }}>{label} ✓</span>;
+                              })}
+                            </div>
+                          )}
+                        </td>
+                        <td className="text-sm">
+                          {manageableTypes.length === 0 ? '—' : midActive ? (
+                            fmtDate(bookingsByType['Mid'].examDate)
+                          ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                              {['Major 1', 'Major 2'].filter(isActive).map(type => (
+                                <span key={type} style={{ fontSize: 11 }}>
+                                  {type === 'Major 1' ? 'M1' : 'M2'}: {fmtDate(bookingsByType[type].examDate)}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                        <td className="text-sm">
+                          {manageableTypes.length === 0 ? '—' : midActive ? (
+                            <span>{bookingsByType['Mid'].maleProctors ?? 0}M / {bookingsByType['Mid'].femaleProctors ?? 0}F</span>
+                          ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                              {['Major 1', 'Major 2'].filter(isActive).map(type => (
+                                <span key={type} style={{ fontSize: 11 }}>
+                                  {type === 'Major 1' ? 'M1' : 'M2'}: {bookingsByType[type].maleProctors ?? 0}M / {bookingsByType[type].femaleProctors ?? 0}F
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                        <td>
+                          <select className="form-input" style={{ width: 160, fontSize: 12 }} value="" onChange={e => {
+                            const val = e.target.value;
+                            if (val === 'book') goToBooking(c, null, bookableTypes.length === 1 ? bookableTypes[0] : null);
+                            else if (val.startsWith('reschedule|')) goToBooking(c, bookingsByType[val.slice(11)]);
+                            else if (val.startsWith('cancel|')) handleCancel(bookingsByType[val.slice(7)]);
                             e.target.value = '';
                           }}>
-                          <option value="">Select action</option>
-                          <option value="book">Book</option>
-                        </select>
-                      </td>
-                    </tr>
-                  ))}
-                  {filtered.length === 0 && notBookedRows.length === 0 && (
+                            <option value="" disabled>Select action</option>
+                            {bookableTypes.length > 0 && <option value="book">Book</option>}
+                            {manageableTypes.map(type => (
+                              <option key={`reschedule|${type}`} value={`reschedule|${type}`}>Reschedule {type}</option>
+                            ))}
+                            {manageableTypes.map(type => (
+                              <option key={`cancel|${type}`} value={`cancel|${type}`}>Cancel {type}</option>
+                            ))}
+                          </select>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {allRows.length === 0 && (
                     <tr>
-                      <td colSpan={7} style={{ textAlign: 'center', padding: 24, color: 'var(--clr-muted)' }}>
-                        No courses found for your department{deptCourses.length !== 1 ? 's' : ''}
+                      <td colSpan={6} style={{ textAlign: 'center', padding: 24, color: 'var(--clr-muted)' }}>
+                        No courses found for your department{phase2Courses.length !== 1 ? 's' : ''}
                       </td>
                     </tr>
                   )}
@@ -701,55 +706,6 @@ const BookingsTab = ({ deptCourses, authUserName }) => {
         </div>
       </div>
 
-      {modal && (
-        <div className="modal-overlay" onClick={closeModal}>
-          <div className="modal-box" style={{ maxWidth: 460, background: 'var(--clr-card)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-md)', padding: 24 }} onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2 className="modal-title">{modal.mode === 'add' ? 'Add Booking' : 'Edit Booking'}</h2>
-              <button className="modal-close" onClick={closeModal}><X size={16} /></button>
-            </div>
-            <div className="modal-body space-y-3">
-              <div>
-                <label className="form-label">Course</label>
-                <select className="form-input" value={form.courseCode} onChange={e => setForm(p => ({ ...p, courseCode: e.target.value }))} disabled={modal.mode === 'edit'}>
-                  <option value="">Select course…</option>
-                  {deptCourses.map(c => <option key={c.code} value={c.code}>{c.code} — {c.name}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="form-label">Exam Type</label>
-                <select className="form-input" value={form.examType} onChange={e => setForm(p => ({ ...p, examType: e.target.value }))}>
-                  {EXAM_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="form-label">Exam Date</label>
-                <input className="form-input" type="date" value={form.examDate} onChange={e => setForm(p => ({ ...p, examDate: e.target.value }))} />
-              </div>
-              <div>
-                <label className="form-label">Room</label>
-                <input className="form-input" value={form.room} onChange={e => setForm(p => ({ ...p, room: e.target.value }))} placeholder="e.g. Building 22 - 101" />
-              </div>
-              <div style={{ display: 'flex', gap: 12 }}>
-                <div style={{ flex: 1 }}>
-                  <label className="form-label">Male Proctors</label>
-                  <input className="form-input" type="number" min={0} value={form.maleProctors} onChange={e => setForm(p => ({ ...p, maleProctors: e.target.value }))} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label className="form-label">Female Proctors</label>
-                  <input className="form-input" type="number" min={0} value={form.femaleProctors} onChange={e => setForm(p => ({ ...p, femaleProctors: e.target.value }))} />
-                </div>
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button className="btn btn-outline btn-sm" onClick={closeModal}>Cancel</button>
-              <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>
-                {saving ? 'Saving…' : modal.mode === 'add' ? 'Create Booking' : 'Save Changes'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

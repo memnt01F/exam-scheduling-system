@@ -4,7 +4,7 @@ import DashboardLayout from '../components/DashboardLayout.jsx';
 import ExamCalendar from '../components/ExamCalendar.jsx';
 import { useCourses } from '../context/CoursesContext.jsx';
 import { getRequiredExamTypes, EXAM_TYPES } from '../lib/mock-data.js';
-import { checkBookingConflict } from '../services/api.js';
+import { checkBookingConflict, createBooking, updateBooking } from '../services/api.js';
 
 import { ArrowLeft, Check, X, AlertTriangle, Users, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -20,13 +20,22 @@ function toDateStr(d) {
 const BookingPage = () => {
   const { courseId } = useParams();
   const navigate = useNavigate();
-  const { courses, examSlots, bookCourse, rescheduleBooking, cancelBooking, getSlotDate, formatSlotDate } = useCourses();
+  const { courses, examSlots, bookCourse, rescheduleBooking, cancelBooking, getSlotDate, formatSlotDate, academicTerms } = useCourses();
   const { user } = useAuth();
 
-  // Support query params for admin/committee flow
+  // Support query params for admin/deptHead flow
   const searchParams = new URLSearchParams(window.location.search);
-  const fromAdmin = searchParams.get('from') === 'admin';
+  const from = searchParams.get('from');
+  const fromAdmin = from === 'admin';
+  const isPhase2 = searchParams.get('phase') === '2';
+  const termIdParam = searchParams.get('termId');
+  const bookingIdParam = searchParams.get('bookingId');
   const requestedExamType = searchParams.get('examType');
+  const backPath = from === 'admin' ? '/admin' : from === 'deptHead' ? '/dept-head' : '/dashboard';
+
+  const targetTermCalendar = isPhase2 && termIdParam
+    ? (academicTerms.find(t => (t._serverId || t.id) === termIdParam)?.calendarData || null)
+    : null;
 
   const course = courses.find((c) => c.id === courseId);
   const hasAnyBooking = !!(course && Object.keys(course.bookings || {}).length);
@@ -178,6 +187,39 @@ const BookingPage = () => {
   const handleConfirmBooking = async () => {
     setShowConfirm(false);
 
+    // Phase 2 (level 3/4 manual bookings) — use API directly
+    if (isPhase2) {
+      try {
+        const payload = {
+          courseCode: course.code,
+          examType,
+          examDate: selectedDate,
+          maleProctors: parseInt(maleProctors),
+          femaleProctors: parseInt(femaleProctors),
+          level: course.level,
+          termId: termIdParam || null,
+          phaseNumber: 2,
+          status: 'confirmed',
+          createdBy: user?.name || 'Unknown',
+          updatedBy: user?.name || 'Unknown',
+        };
+        if (bookingIdParam) {
+          await updateBooking(bookingIdParam, payload);
+        } else {
+          await createBooking(payload);
+        }
+        toast.success(
+          `${examType} exam ${bookingIdParam ? 'rescheduled' : 'booked'} for ${course.code} on ${selectedDateFormatted}`,
+          { description: 'Confirmation email sent to your KFUPM email.' }
+        );
+        setTimeout(() => navigate(backPath), 1500);
+      } catch (err) {
+        toast.error(err?.data?.message || err?.message || 'Failed to save booking');
+      }
+      return;
+    }
+
+    // Phase 0/1 — original context-based flow
     const selectedMode = modeOf(examType);
     const switchingModes = (selectedMode === 'mid' && hasAnyMajorBooked) || (selectedMode === 'major' && hasMidBooked);
 
@@ -215,7 +257,6 @@ const BookingPage = () => {
       `${examType} exam ${existingForType ? 'rescheduled' : 'booked'} for ${course.code} on ${selectedDateFormatted}`,
       { description: 'Confirmation email sent to your KFUPM email.' }
     );
-    const backPath = fromAdmin ? '/admin' : '/dashboard';
     setTimeout(() => navigate(backPath), 1500);
   };
 
@@ -228,7 +269,7 @@ const BookingPage = () => {
           </button>
           <div>
             <h1 className="text-xl font-bold" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              {isReschedule ? 'Reschedule' : 'Book'} Exam — {course.code}
+              {(isReschedule || bookingIdParam) ? 'Reschedule' : 'Book'} Exam — {course.code}
             </h1>
             <p className="text-sm text-muted">
               {course.name} · Level {course.level} · {course.department}
@@ -256,6 +297,7 @@ const BookingPage = () => {
               selectedDate={selectedDate}
               onSelectDate={handleSelectDate}
               courseCode={course.code}
+              termCalendarOverride={targetTermCalendar}
             />
           </div>
 

@@ -19,7 +19,7 @@ const bookingSchema = new mongoose.Schema(
     notes: { type: String },
     status: {
       type: String,
-      enum: ["pending", "approved", "rejected", "cancelled"],
+      enum: ["pending", "approved", "rejected", "cancelled", "confirmed"],
       default: "pending",
     },
     // Algorithm-generated exam fields (phaseNumber 0 or 1; 2 = Phase 2 manual booking)

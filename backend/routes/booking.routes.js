@@ -32,7 +32,7 @@ const examMode = (t) => (t === "Mid" ? "mid" : "major");
 router.get("/", async (req, res) => {
   try {
     const { termId, phaseNumber } = req.query;
-    const query = { status: { $in: ["pending", "approved"] } };
+    const query = { status: { $in: ["pending", "confirmed"] } };
 
     if (phaseNumber !== undefined) {
       query.phaseNumber = Number(phaseNumber);
@@ -87,8 +87,8 @@ router.post("/confirm", async (req, res) => {
     const now = new Date();
 
     const result = await Booking.updateMany(
-      { termId, phaseNumber: phaseNum, status: { $in: ["pending", "approved"] } },
-      { $set: { confirmedAt: now, confirmedBy: confirmedBy || "admin", status: "approved" } }
+      { termId, phaseNumber: phaseNum, status: { $in: ["pending", "confirmed"] } },
+      { $set: { confirmedAt: now, confirmedBy: confirmedBy || "admin", status: "confirmed" } }
     );
 
     // Flip matching CoursePreference records to 'scheduled'
@@ -149,7 +149,7 @@ router.post("/", async (req, res) => {
     const {
       courseCode, examDate, level,
       maleProctors = 0, femaleProctors = 0,
-      createdBy, examType, notes, termId,
+      createdBy, examType, notes, termId, status,
     } = req.body || {};
 
     if (!courseCode || !examDate || level === undefined || level === null || !createdBy) {
@@ -234,13 +234,13 @@ router.post("/", async (req, res) => {
       existingAnyStatus.createdBy = createdBy;
       existingAnyStatus.notes = notes;
       existingAnyStatus.termId = termId || null;
-      existingAnyStatus.status = "pending";
+      existingAnyStatus.status = status || "pending";
       await existingAnyStatus.save();
 
       await AuditLog.create({
         action: "CREATE_BOOKING",
         user: createdBy,
-        role: "committee",
+        role: "deptHead",
         courseCode: normalized,
         bookingId: existingAnyStatus._id,
         details: `Reactivated ${type} booking for ${normalized} on ${date.toISOString().slice(0, 10)}`,
@@ -259,7 +259,7 @@ router.post("/", async (req, res) => {
       createdBy,
       notes,
       termId: termId || null,
-      status: "pending",
+      status: status || "pending",
       phaseNumber: 2,
     });
 

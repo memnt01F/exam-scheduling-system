@@ -14,14 +14,14 @@ const SEED_USERS = [
   {
     name: "Dr. Fatima Al-Otaibi",
     email: "falotaibi@kfupm.edu.sa",
-    role: "committee",
+    role: "deptHead",
     department: "Information & Computer Science",
     createdBy: "seed",
   },
   {
     name: "Dr. Nasser Al-Mutairi",
     email: "nmutairi@kfupm.edu.sa",
-    role: "committee",
+    role: "deptHead",
     department: "Information & Computer Science",
     createdBy: "seed",
   },

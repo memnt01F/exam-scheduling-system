@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 
 const ROLE_HOME = {
   coordinator: '/dashboard',
-  committee:   '/committee',
+  deptHead:    '/dept-head',
   admin:       '/admin',
 };
 

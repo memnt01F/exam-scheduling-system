@@ -9,8 +9,8 @@ const roleNavItems = {
   coordinator: [
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   ],
-  committee: [
-    { href: '/committee', label: 'Dept. Head', icon: Users },
+  deptHead: [
+    { href: '/dept-head', label: 'Dept. Head', icon: Users },
   ],
   admin: [
     { href: '/admin', label: 'Administration', icon: Settings },
@@ -95,7 +95,7 @@ const DashboardLayout = ({ children }) => {
 
           <div className="header-right">
             <span className="badge badge-secondary" style={{ textTransform: 'capitalize', fontSize: 11 }}>
-              {user?.role === 'committee' ? 'Dept. Head' : user?.role || 'guest'}
+              {user?.role === 'deptHead' ? 'Dept. Head' : user?.role || 'guest'}
             </span>
             <div ref={profileRef} style={{ position: 'relative' }}>
               <button

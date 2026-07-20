@@ -142,7 +142,7 @@ const UserManagement = () => {
           const cols = lines[i].split(',').map(c => c.trim());
           if (!cols[nameIdx] || !cols[emailIdx]) continue;
           const role = cols[roleIdx]?.toLowerCase() || 'coordinator';
-          const validRole = ['coordinator', 'committee', 'admin'].includes(role) ? role : 'coordinator';
+          const validRole = ['coordinator', 'deptHead', 'admin'].includes(role) ? role : 'coordinator';
           newUsers.push({
             name: cols[nameIdx],
             email: cols[emailIdx],
@@ -163,7 +163,7 @@ const UserManagement = () => {
     e.target.value = '';
   };
 
-  const roleLabel = (r) => ({ coordinator: 'Coordinator', committee: 'Dept. Head', admin: 'Admin' })[r] || r;
+  const roleLabel = (r) => ({ coordinator: 'Coordinator', deptHead: 'Dept. Head', admin: 'Admin' })[r] || r;
 
   return (
     <div className="space-y-4">
@@ -202,7 +202,7 @@ const UserManagement = () => {
                   <td className="text-sm text-muted">{u.email}</td>
                   <td><span className="badge badge-outline" style={{ fontSize: 10 }}>{roleLabel(u.role)}</span></td>
                   <td className="text-sm">
-                    {u.role === 'committee'
+                    {u.role === 'deptHead'
                       ? (u.managedDepartments || []).join(', ') || '—'
                       : u.department}
                   </td>
@@ -333,14 +333,14 @@ const EditUserModal = ({ user, departments, onClose, onSave, onDelete }) => {
 
   const handleSave = () => {
     if (!form.name.trim() || !form.email.trim()) { toast.error('Name and Email are required'); return; }
-    if (form.role === 'committee' && managedDepts.length === 0) { toast.error('Please select at least one managed department'); return; }
+    if (form.role === 'deptHead' && managedDepts.length === 0) { toast.error('Please select at least one managed department'); return; }
     const selectedCourseCodes = assignedCourseIds
       .map(id => courses.find(c => c.id === id)?.code)
       .filter(Boolean);
     onSave({
       ...form,
       selectedCourseCodes: form.role === 'coordinator' ? selectedCourseCodes : [],
-      managedDepartments: form.role === 'committee' ? managedDepts : [],
+      managedDepartments: form.role === 'deptHead' ? managedDepts : [],
     });
   };
 
@@ -362,9 +362,9 @@ const EditUserModal = ({ user, departments, onClose, onSave, onDelete }) => {
           </div>
           <div>
             <label className="text-sm font-medium">Role</label>
-            <select className="form-input" value={form.role} onChange={e => { set('role', e.target.value); if (e.target.value !== 'coordinator') setAssignedCourseIds([]); if (e.target.value !== 'committee') setManagedDepts([]); }}>
+            <select className="form-input" value={form.role} onChange={e => { set('role', e.target.value); if (e.target.value !== 'coordinator') setAssignedCourseIds([]); if (e.target.value !== 'deptHead') setManagedDepts([]); }}>
               <option value="coordinator">Coordinator</option>
-              <option value="committee">Department Head</option>
+              <option value="deptHead">Department Head</option>
               <option value="admin">Admin</option>
             </select>
           </div>
@@ -376,7 +376,7 @@ const EditUserModal = ({ user, departments, onClose, onSave, onDelete }) => {
               </select>
             </div>
           )}
-          {form.role === 'committee' && (
+          {form.role === 'deptHead' && (
             <div>
               <label className="text-sm font-medium">Managed Departments</label>
               <div style={{ border: '1px solid var(--clr-border)', borderRadius: 8, maxHeight: 160, overflowY: 'auto', padding: 4 }}>
@@ -492,7 +492,7 @@ const AddUserModal = ({ departments, courses, onClose, onSave, onImport }) => {
 
   const handleSave = () => {
     if (!form.name.trim() || !form.email.trim()) { toast.error('Name and Email are required'); return; }
-    if (form.role === 'committee' && managedDepts.length === 0) { toast.error('Please select at least one managed department'); return; }
+    if (form.role === 'deptHead' && managedDepts.length === 0) { toast.error('Please select at least one managed department'); return; }
     const selectedCourseCodes = assignedCourseIds
       .map(id => courses.find(c => c.id === id)?.code)
       .filter(Boolean);
@@ -500,7 +500,7 @@ const AddUserModal = ({ departments, courses, onClose, onSave, onImport }) => {
       ...form,
       id: `u-${Date.now()}`,
       selectedCourseCodes: form.role === 'coordinator' ? selectedCourseCodes : [],
-      managedDepartments: form.role === 'committee' ? managedDepts : [],
+      managedDepartments: form.role === 'deptHead' ? managedDepts : [],
     });
   };
 
@@ -522,9 +522,9 @@ const AddUserModal = ({ departments, courses, onClose, onSave, onImport }) => {
           </div>
           <div>
             <label className="text-sm font-medium">Role</label>
-            <select className="form-input" value={form.role} onChange={e => { set('role', e.target.value); if (e.target.value !== 'coordinator') setAssignedCourseIds([]); if (e.target.value !== 'committee') setManagedDepts([]); }}>
+            <select className="form-input" value={form.role} onChange={e => { set('role', e.target.value); if (e.target.value !== 'coordinator') setAssignedCourseIds([]); if (e.target.value !== 'deptHead') setManagedDepts([]); }}>
               <option value="coordinator">Coordinator</option>
-              <option value="committee">Department Head</option>
+              <option value="deptHead">Department Head</option>
               <option value="admin">Admin</option>
             </select>
           </div>
@@ -536,7 +536,7 @@ const AddUserModal = ({ departments, courses, onClose, onSave, onImport }) => {
               </select>
             </div>
           )}
-          {form.role === 'committee' && (
+          {form.role === 'deptHead' && (
             <div>
               <label className="text-sm font-medium">Managed Departments</label>
               <div style={{ border: '1px solid var(--clr-border)', borderRadius: 8, maxHeight: 160, overflowY: 'auto', padding: 4 }}>

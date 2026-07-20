@@ -60,7 +60,7 @@ function getMonthGrid(year, month) {
   return rows;
 }
 
-const ExamCalendar = ({ examSlots, selectedDate, onSelectDate, courseCode }) => {
+const ExamCalendar = ({ examSlots, selectedDate, onSelectDate, courseCode, termCalendarOverride }) => {
   const {
     effectiveWeekStartDates,
     effectiveBlockedDates,
@@ -70,6 +70,12 @@ const ExamCalendar = ({ examSlots, selectedDate, onSelectDate, courseCode }) => 
     backendOnline,
   } = useCourses();
 
+  // Use term-specific calendar data when provided (e.g., phase 2 booking for a non-active term)
+  const weekStartDates = termCalendarOverride?.weekStartDates || effectiveWeekStartDates;
+  const blockedDates   = termCalendarOverride?.blockedDates   || effectiveBlockedDates;
+  const termStart      = termCalendarOverride?.termStart      || effectiveTermStart;
+  const termEnd        = termCalendarOverride?.termEnd        || effectiveTermEnd;
+
   // Always refresh global bookings when the calendar is opened so all users
   // see the latest system-wide booking state (not filtered by user).
   useEffect(() => {
@@ -78,8 +84,8 @@ const ExamCalendar = ({ examSlots, selectedDate, onSelectDate, courseCode }) => 
   }, [backendOnline, refreshBookings]);
 
   // Determine month range from term dates
-  const termStartDate = new Date(effectiveTermStart + 'T00:00:00');
-  const termEndDate = new Date(effectiveTermEnd + 'T00:00:00');
+  const termStartDate = new Date(termStart + 'T00:00:00');
+  const termEndDate   = new Date(termEnd   + 'T00:00:00');
 
   const months = useMemo(() => {
     const result = [];
@@ -94,11 +100,11 @@ const ExamCalendar = ({ examSlots, selectedDate, onSelectDate, courseCode }) => 
       if (m > 11) { m = 0; y++; }
     }
     return result;
-  }, [effectiveTermStart, effectiveTermEnd]);
+  }, [termStart, termEnd]);
 
   const [viewMonth, setViewMonth] = useState(0);
 
-  const teachingDates = useMemo(() => buildTeachingDates(effectiveWeekStartDates), [effectiveWeekStartDates]);
+  const teachingDates = useMemo(() => buildTeachingDates(weekStartDates), [weekStartDates]);
 
   // FIX (Issue 3): was const map = { ...bookedDateMap } which seeded the calendar
   // with hardcoded fake bookings on every render. Now starts empty and builds
@@ -160,9 +166,9 @@ const ExamCalendar = ({ examSlots, selectedDate, onSelectDate, courseCode }) => 
 
                 const dateStr = toDateStr(new Date(current.year, current.month, day));
                 const isTeaching = teachingDates.has(dateStr);
-                const blocked = effectiveBlockedDates[dateStr];
+                const blocked = blockedDates[dateStr];
                 const booked = dynamicBooked[dateStr] || [];
-                const weekDay = dateToWeekDayDynamic(dateStr, effectiveWeekStartDates);
+                const weekDay = dateToWeekDayDynamic(dateStr, weekStartDates);
                 const isSelected = selectedDate === dateStr;
                 const isFriday = ci === 5;
                 const isAvailable = isTeaching && !blocked && !isFriday;

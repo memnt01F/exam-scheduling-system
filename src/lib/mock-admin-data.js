@@ -1,10 +1,10 @@
 export const allUsers = [
   { id: 'u1', name: 'Dr. Ahmed Al-Rashid', email: 'arashid@kfupm.edu.sa', role: 'coordinator', department: 'Information & Computer Science', isActive: true },
-  { id: 'u2', name: 'Dr. Fatima Al-Otaibi', email: 'falotaibi@kfupm.edu.sa', role: 'committee', department: 'Scheduling Office', isActive: true },
+  { id: 'u2', name: 'Dr. Fatima Al-Otaibi', email: 'falotaibi@kfupm.edu.sa', role: 'deptHead', department: 'Scheduling Office', isActive: true },
   { id: 'u3', name: 'Eng. Omar Al-Harbi', email: 'oalharbi@kfupm.edu.sa', role: 'admin', department: 'IT Services', isActive: true },
   { id: 'u4', name: 'Dr. Khalid Al-Dossary', email: 'kdossary@kfupm.edu.sa', role: 'coordinator', department: 'Mathematics', isActive: true },
   { id: 'u5', name: 'Dr. Sara Al-Zahrani', email: 'szahrani@kfupm.edu.sa', role: 'coordinator', department: 'Physics', isActive: true },
-  { id: 'u6', name: 'Dr. Nasser Al-Mutairi', email: 'nmutairi@kfupm.edu.sa', role: 'committee', department: 'Scheduling Office', isActive: false },
+  { id: 'u6', name: 'Dr. Nasser Al-Mutairi', email: 'nmutairi@kfupm.edu.sa', role: 'deptHead', department: 'Scheduling Office', isActive: false },
   { id: 'u7', name: 'Dr. Layla Al-Qahtani', email: 'lqahtani@kfupm.edu.sa', role: 'coordinator', department: 'Chemical Engineering', isActive: true },
 ];
 

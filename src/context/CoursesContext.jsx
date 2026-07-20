@@ -186,7 +186,7 @@ export const CoursesProvider = ({ children }) => {
     createAuditLog({
       action: backendAction,
       user: user || 'System',
-      role: role || (action?.startsWith('phase') ? 'committee' : action?.startsWith('user') || action?.startsWith('term') ? 'admin' : 'coordinator'),
+      role: role || (action?.startsWith('phase') ? 'deptHead' : action?.startsWith('user') || action?.startsWith('term') ? 'admin' : 'coordinator'),
       courseCode: course && course !== '—' ? course : undefined,
       details: details || '',
       metadata,
