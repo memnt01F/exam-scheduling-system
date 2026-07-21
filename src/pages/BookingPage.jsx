@@ -33,7 +33,7 @@ const BookingPage = () => {
   const requestedExamType = searchParams.get('examType');
   const backPath = from === 'admin' ? '/admin' : from === 'deptHead' ? '/dept-head' : '/dashboard';
 
-  const targetTermCalendar = isPhase2 && termIdParam
+  const targetTermCalendar = termIdParam
     ? (academicTerms.find(t => (t._serverId || t.id) === termIdParam)?.calendarData || null)
     : null;
 
@@ -238,6 +238,7 @@ const BookingPage = () => {
           newExamType: examType,
           week: selectedWeekDay.week,
           day: selectedWeekDay.day,
+          examDate: selectedDate,
           maleProctors: parseInt(maleProctors),
           femaleProctors: parseInt(femaleProctors),
           userName: user?.name || 'Unknown',
@@ -248,6 +249,8 @@ const BookingPage = () => {
           examType,
           week: selectedWeekDay.week,
           day: selectedWeekDay.day,
+          examDate: selectedDate,
+          termId: termIdParam || undefined,
           maleProctors: parseInt(maleProctors),
           femaleProctors: parseInt(femaleProctors),
           userName: user?.name || 'Unknown',

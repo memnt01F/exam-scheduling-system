@@ -134,7 +134,7 @@ const CourseRow = ({ course, isPhaseActive, isPhaseClosed, isPhaseUpcoming, onBo
                     <span className="exam-slot-label">{type}</span>
                     {b ? (
                       <span className="exam-slot-status exam-slot-booked">
-                        <CheckCircle2 size={11} /> {formatSlotDate(b.week, b.day)}
+                        <CheckCircle2 size={11} /> {b.week ? formatSlotDate(b.week, b.day) : b.examDate ? new Date(b.examDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'}
                       </span>
                     ) : (
                       <span className="exam-slot-status exam-slot-pending">
@@ -196,7 +196,7 @@ const CourseRow = ({ course, isPhaseActive, isPhaseClosed, isPhaseUpcoming, onBo
                 <div className="course-details-grid">
                   <div className="detail-item">
                     <span className="detail-label">Exam Date</span>
-                    <span className="detail-value">{formatSlotDate(b.week, b.day)}</span>
+                    <span className="detail-value">{b.week ? formatSlotDate(b.week, b.day) : b.examDate ? new Date(b.examDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span>
                   </div>
                   <div className="detail-item">
                     <span className="detail-label">Week / Day</span>
@@ -446,6 +446,7 @@ const Dashboard = () => {
                     {bookingCourses.map(course => {
                       const coursePhase = getPhaseForCourse(course);
                       const { isPhaseActive, isPhaseClosed, isPhaseUpcoming } = getPhaseState(coursePhase);
+                      const termId = coursePhase?.targetTermId;
                       return (
                         <CourseRow
                           key={course.id}
@@ -453,7 +454,7 @@ const Dashboard = () => {
                           isPhaseActive={isPhaseActive}
                           isPhaseClosed={isPhaseClosed}
                           isPhaseUpcoming={isPhaseUpcoming}
-                          onBook={() => navigate(`/booking/${course.id}`)}
+                          onBook={() => navigate(`/booking/${course.id}${termId ? `?termId=${termId}` : ''}`)}
                           formatSlotDate={formatSlotDate}
                         />
                       );

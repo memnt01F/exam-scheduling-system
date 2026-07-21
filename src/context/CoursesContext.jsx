@@ -213,12 +213,12 @@ export const CoursesProvider = ({ children }) => {
    * Apply a backend-shaped booking record into local courses + slots state.
    * Backend record shape: { courseCode, examType?, examDate, maleProctors, femaleProctors, ... }
    */
-  const applyBookingLocally = useCallback((courseId, examType, week, day, maleProctors, femaleProctors, oldBooking, courseCode) => {
+  const applyBookingLocally = useCallback((courseId, examType, week, day, maleProctors, femaleProctors, oldBooking, courseCode, examDate = null) => {
     setCourses(prev => prev.map(c => {
       if (c.id !== courseId) return c;
       const newBookings = { ...(c.bookings || {}) };
       newBookings[examType] = {
-        week, day, maleProctors, femaleProctors,
+        week, day, examDate, maleProctors, femaleProctors,
         bookedAt: new Date().toISOString(),
       };
       return { ...c, bookings: newBookings };
@@ -249,13 +249,14 @@ export const CoursesProvider = ({ children }) => {
    * Returns { success: true } on success, or { success: false, error } on
    * conflict / validation / server error so callers can keep the modal open.
    */
-  const bookCourse = async ({ courseId, examType, week, day, maleProctors, femaleProctors, userName }) => {
+  const bookCourse = async ({ courseId, examType, week, day, examDate: providedExamDate, termId, maleProctors, femaleProctors, userName }) => {
     const oldCourse = courses.find(c => c.id === courseId);
     const isReschedule = !!(oldCourse?.bookings[examType]);
     const courseCode = oldCourse?.code || '';
     const dateLabel = formatSlotDate(week, day);
     const slotDate = getSlotDate(week, day);
-    const examDateStr = slotDate ? `${slotDate.getFullYear()}-${String(slotDate.getMonth() + 1).padStart(2, '0')}-${String(slotDate.getDate()).padStart(2, '0')}` : null;
+    const computedExamDateStr = slotDate ? `${slotDate.getFullYear()}-${String(slotDate.getMonth() + 1).padStart(2, '0')}-${String(slotDate.getDate()).padStart(2, '0')}` : null;
+    const examDateStr = providedExamDate || computedExamDateStr;
     const oldBooking = oldCourse?.bookings[examType];
 
     // Try backend first.
@@ -268,13 +269,14 @@ export const CoursesProvider = ({ children }) => {
         maleProctors: parseInt(maleProctors) || 0,
         femaleProctors: parseInt(femaleProctors) || 0,
         createdBy: userName || 'Unknown',
+        ...(termId ? { termId } : {}),
       });
 
       // Refresh authoritative booking data from server so calendars update for all users.
       try {
         await refreshBookings();
       } catch {
-        applyBookingLocally(courseId, examType, week, day, parseInt(maleProctors) || 0, parseInt(femaleProctors) || 0, oldBooking, courseCode);
+        applyBookingLocally(courseId, examType, week, day, parseInt(maleProctors) || 0, parseInt(femaleProctors) || 0, oldBooking, courseCode, examDateStr);
       }
 
       if (isReschedule) {
@@ -300,7 +302,7 @@ export const CoursesProvider = ({ children }) => {
       }
       // Network/unreachable backend — fall back to local-only behavior so demo still works.
       if (err.status === undefined || err.message?.includes('Failed to fetch')) {
-        applyBookingLocally(courseId, examType, week, day, parseInt(maleProctors) || 0, parseInt(femaleProctors) || 0, oldBooking, courseCode);
+        applyBookingLocally(courseId, examType, week, day, parseInt(maleProctors) || 0, parseInt(femaleProctors) || 0, oldBooking, courseCode, examDateStr);
         if (isReschedule) {
           const oldDate = formatSlotDate(oldBooking.week, oldBooking.day);
           addAuditLog({ action: 'booking_rescheduled', user: userName || 'Unknown', course: courseCode, details: `${examType} moved from Week ${oldBooking.week}, ${oldDate} to Week ${week}, ${dateLabel} (offline)` });
@@ -349,11 +351,13 @@ export const CoursesProvider = ({ children }) => {
         if (!course) continue;
         const dateStr = typeof b.examDate === 'string' ? b.examDate.slice(0, 10) : null;
         const wd = dateStr ? dateToWeekDayFromWeekStarts(dateStr, effectiveWeekStartDates) : null;
-        if (!wd) continue;
         const examType = b.examType || 'Major 1';
+        // Include bookings from any term — store examDate so UI can show correct date
+        // even when wd mapping fails (booking belongs to a different term's calendar)
         course.bookings[examType] = {
-          week: wd.week,
-          day: wd.day,
+          week: wd?.week ?? null,
+          day: wd?.day ?? null,
+          examDate: dateStr,
           maleProctors: b.maleProctors ?? 0,
           femaleProctors: b.femaleProctors ?? 0,
           bookedAt: b.createdAt || new Date().toISOString(),
@@ -814,14 +818,15 @@ export const CoursesProvider = ({ children }) => {
    * Reschedule an existing booking via PUT /api/bookings/:id when possible.
    * Falls back to bookCourse() (local create) when no server id is known.
    */
-  const rescheduleBooking = useCallback(async ({ courseId, oldExamType, newExamType, week, day, maleProctors, femaleProctors, userName, role }) => {
+  const rescheduleBooking = useCallback(async ({ courseId, oldExamType, newExamType, week, day, examDate: providedExamDate, maleProctors, femaleProctors, userName, role }) => {
     const course = courses.find(c => c.id === courseId);
     if (!course) return { success: false };
     const oldBooking = course.bookings[oldExamType];
     const slotDate = getSlotDate(week, day);
-    const examDateStr = slotDate
+    const computedExamDateStr = slotDate
       ? `${slotDate.getFullYear()}-${String(slotDate.getMonth() + 1).padStart(2, '0')}-${String(slotDate.getDate()).padStart(2, '0')}`
       : null;
+    const examDateStr = providedExamDate || computedExamDateStr;
 
     // If we don't have a server id, just create a fresh booking — the server
     // will store it and the old local-only entry will be overwritten on refresh.
@@ -836,7 +841,7 @@ export const CoursesProvider = ({ children }) => {
         }));
       }
       return await bookCourse({
-        courseId, examType: newExamType, week, day,
+        courseId, examType: newExamType, week, day, examDate: examDateStr,
         maleProctors, femaleProctors, userName,
       });
     }

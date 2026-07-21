@@ -477,9 +477,10 @@ const BookingsTab = ({ deptCourses, authUserName }) => {
   const navigate = useNavigate();
   const [bookings, setBookings]     = useState([]);
   const [loading, setLoading]       = useState(false);
-  const [search, setSearch]         = useState('');
-  const [deptFilter, setDeptFilter] = useState('');
+  const [search, setSearch]           = useState('');
+  const [deptFilter, setDeptFilter]   = useState('');
   const [levelFilter, setLevelFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
   const [selectedTermId, setSelectedTermId] = useState(() => localStorage.getItem('depthead_bookings_termId') || '');
 
   const handleTermChange = (id) => {
@@ -557,10 +558,14 @@ const BookingsTab = ({ deptCourses, authUserName }) => {
         if (levelFilter && c.level !== Number(levelFilter)) return false;
         if (deptFilter && c.department !== deptFilter) return false;
         if (search && !c.code.toLowerCase().includes(search.toLowerCase())) return false;
+        const bMap = byCode[c.code] || {};
+        const hasActive = PHASE2_EXAM_TYPES.some(t => bMap[t] && bMap[t].status !== 'cancelled');
+        if (statusFilter === 'booked' && !hasActive) return false;
+        if (statusFilter === 'not_booked' && hasActive) return false;
         return true;
       })
       .map(c => ({ course: c, bookingsByType: byCode[c.code] || {} }));
-  }, [phase2Courses, bookings, levelFilter, deptFilter, search]);
+  }, [phase2Courses, bookings, levelFilter, deptFilter, search, statusFilter]);
 
   return (
     <div className="space-y-4">
@@ -584,15 +589,11 @@ const BookingsTab = ({ deptCourses, authUserName }) => {
             {depts.map(d => <option key={d} value={d}>{d}</option>)}
           </select>
         )}
-        <button className="btn btn-primary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }} onClick={() => {
-          const row = allRows.find(r => PHASE2_EXAM_TYPES.some(t => !r.bookingsByType[t] || r.bookingsByType[t].status === 'cancelled'));
-          if (row) {
-            const type = PHASE2_EXAM_TYPES.find(t => !row.bookingsByType[t] || row.bookingsByType[t].status === 'cancelled');
-            goToBooking(row.course, null, type);
-          }
-        }}>
-          <Plus size={14} /> Add Booking
-        </button>
+        <select className="form-input" style={{ width: 'auto' }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+          <option value="">All Statuses</option>
+          <option value="booked">Booked</option>
+          <option value="not_booked">Not Booked</option>
+        </select>
       </div>
 
       <div className="card">
