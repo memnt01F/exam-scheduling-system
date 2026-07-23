@@ -32,6 +32,7 @@ A full-stack web application for managing and scheduling exams at KFUPM. Built w
   - [Anchor Slots](#anchor-slots-apianchors)
   - [Enrollments](#enrollments-apienrollments)
   - [Course Offerings](#course-offerings-apicourse-offerings)
+  - [Schedule Generation](#schedule-generation-apischedule)
 - [Error Handling](#error-handling)
 - [Project Structure](#project-structure)
 
@@ -113,6 +114,7 @@ PORT=5001
 |----------|----------|-------------|
 | `MONGO_URL` | Yes | MongoDB Atlas connection string. Found in your Atlas cluster under **Connect → Drivers**. |
 | `PORT` | No | Port the Express server listens on. Defaults to `5001` if not set. |
+| `SCHEDULER_URL` | No | Base URL of the Python scheduling service. Defaults to `http://localhost:8000`. Set to the deployed Render URL in production. |
 
 > **Never commit your `.env` file.** It is already listed in `backend/.gitignore`.
 
@@ -657,6 +659,75 @@ Scrapes the KFUPM Registrar and upserts courses into the reference data for a gi
 
 ---
 
+### Schedule Generation `/api/schedule`
+
+These routes proxy to the Python FastAPI scheduling service (`SCHEDULER_URL`). The service must be running separately — see the `schudeler-API` repo.
+
+#### `POST /api/schedule/generate`
+Starts a scheduling run. Returns immediately with a `jobId`; the solver runs in the background.
+
+**Request body (all fields optional):**
+```json
+{
+  "dryRun": true,
+  "maxExamsPerDay": 4
+}
+```
+
+- `dryRun: true` — solves and reports but does NOT write bookings to the database. Use this for testing.
+- `maxExamsPerDay` — overrides the value in `schedulingconfigs` for this run only.
+
+**Response `202 Accepted`:**
+```json
+{
+  "jobId": "a400f70d28e2",
+  "state": "running",
+  "poll": "/jobs/a400f70d28e2"
+}
+```
+
+**Responses:**
+- `202 Accepted` — job started, poll for result
+- `409 Conflict` — another job is already running
+- `502 Bad Gateway` — scheduler service is unreachable
+
+---
+
+#### `GET /api/schedule/jobs/:id`
+Polls a scheduling job. Call every ~5 seconds until `state === "finished"`.
+
+**Response `200 OK` (while running):**
+```json
+{ "jobId": "...", "state": "running" }
+```
+
+**Response `200 OK` (finished):**
+```json
+{
+  "jobId": "...",
+  "state": "finished",
+  "result": {
+    "status": "done",
+    "summary": { "total": 78, "byType": { "Major 1": 39, "Major 2": 39 } },
+    "warnings": [],
+    "write": { "deleted": 0, "inserted": 78 }
+  }
+}
+```
+
+`result.status` values: `done` | `infeasible` | `validation_error` | `error`
+
+- `done` — schedule written to `bookings` collection as phase-0 documents
+- `validation_error` — data constraints are impossible (e.g. too many exams for the available week windows); `result.message` explains exactly what to fix
+- `infeasible` — solver ran but could not find a valid assignment within the time limit
+
+**Responses:**
+- `200 OK` — job found
+- `404 Not Found` — unknown jobId (jobs live in memory and are cleared on service restart)
+- `502 Bad Gateway` — scheduler service is unreachable
+
+---
+
 ## Error Handling
 
 All API endpoints return consistent error responses in the following format:
@@ -709,6 +780,7 @@ exam-scheduling-system/
 │   │   ├── enrollment.routes.js
 │   │   ├── phase.routes.js
 │   │   ├── preference.routes.js
+│   │   ├── schedule.routes.js           # Proxy to Python scheduler service
 │   │   └── user.routes.js
 │   ├── scripts/
 │   │   ├── seed.js                  # Runs all seeders
