@@ -36,9 +36,12 @@ router.get("/", async (req, res) => {
 
     if (phaseNumber !== undefined) {
       query.phaseNumber = Number(phaseNumber);
-    } else {
+    } else if (!termId) {
+      // No term specified = initial context load; return phase 2 only to avoid
+      // pulling thousands of algorithm-generated bookings on app startup.
       query.phaseNumber = 2;
     }
+    // termId provided without phaseNumber → return all phases for that term (admin view)
     if (termId) query.termId = termId;
 
     const bookings = await Booking.find(query).sort({ examDate: 1 });

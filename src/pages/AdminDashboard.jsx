@@ -546,7 +546,7 @@ const BookingAdmin = () => {
   useEffect(() => {
     if (!selectedTermId) return;
     setLoadingBookings(true);
-    getBookings({ termId: selectedTermId, phaseNumber: 2 })
+    getBookings({ termId: selectedTermId })
       .then(data => setTermBookings(Array.isArray(data) ? data : []))
       .catch(() => setTermBookings([]))
       .finally(() => setLoadingBookings(false));
@@ -561,7 +561,7 @@ const BookingAdmin = () => {
 
   const refreshTermBookings = () => {
     if (!selectedTermId) return;
-    getBookings({ termId: selectedTermId, phaseNumber: 2 })
+    getBookings({ termId: selectedTermId })
       .then(data => setTermBookings(Array.isArray(data) ? data : []))
       .catch(() => {});
   };
@@ -624,6 +624,41 @@ const BookingAdmin = () => {
     [filtered, page]
   );
 
+  const handleExport = () => {
+    const termName = academicTerms.find(t => (t._serverId || t.id) === selectedTermId)?.name || selectedTermId || 'all';
+    const header = ['Course Code', 'Level', 'Exam Type', 'Exam Date', 'Room', 'Male Proctors', 'Female Proctors', 'Status', 'Booked By'];
+    const rows = [];
+    for (const { course: c, bookingsByType } of filtered) {
+      const active = PHASE2_EXAM_TYPES
+        .map(t => ({ type: t, b: bookingsByType[t] }))
+        .filter(({ b }) => b && b.status !== 'cancelled');
+      if (active.length === 0) {
+        rows.push([c.code, c.level, '', '', '', '', '', 'Not Booked', '']);
+      } else {
+        for (const { type, b } of active) {
+          rows.push([
+            c.code, c.level, type,
+            b.examDate ? new Date(b.examDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '',
+            b.room || '',
+            b.maleProctors ?? 0,
+            b.femaleProctors ?? 0,
+            b.status,
+            b.createdBy || '',
+          ]);
+        }
+      }
+    }
+    const csv = [header, ...rows]
+      .map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `schedule_term_${termName}_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted">Administrative booking create, modify, and delete actions. All actions are logged.</p>
@@ -653,6 +688,9 @@ const BookingAdmin = () => {
           <option value="booked">Booked</option>
           <option value="not_booked">Not Booked</option>
         </select>
+        <button className="btn btn-outline btn-sm" style={{ display: 'flex', alignItems: 'center', gap: 6, height: 36, whiteSpace: 'nowrap' }} onClick={handleExport}>
+          <FileSpreadsheet size={14} /> Export CSV
+        </button>
       </div>
       {loadingBookings && <p className="text-sm text-muted">Loading bookings…</p>}
 
