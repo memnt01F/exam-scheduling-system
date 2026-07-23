@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useCourses } from '../../context/CoursesContext.jsx';
-import { getPreferences, getEnrollmentStats, getScheduledExams } from '../../services/api.js';
+import { getPreferences, getEnrollmentStats, getScheduledExams, generateSchedule, getScheduleJob } from '../../services/api.js';
 import { toast } from 'sonner';
 import {
   Search, Bell, ChevronDown, Calendar, AlertTriangle, ClipboardList,
@@ -80,6 +80,9 @@ const SchedulingManagement = ({ restrictedDepts }) => {
   const [showScheduleCalendar, setShowScheduleCalendar] = useState(false);
   const [scheduledExams, setScheduledExams]             = useState([]);
   const [enrollmentStats, setEnrollmentStats]           = useState([]);
+  const [generating, setGenerating]                     = useState(false);
+  const [genError, setGenError]                         = useState(null);
+  const pollRef = useRef(null);
   const reminderRef = useRef(null);
 
   /* default to latest term */
@@ -207,6 +210,40 @@ const SchedulingManagement = ({ restrictedDepts }) => {
     : true;
 
   const hasSchedule = scheduledExams.length > 0;
+
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+
+  const handleGenerate = async () => {
+    setGenerating(true);
+    setGenError(null);
+    try {
+      const { jobId } = await generateSchedule();
+      pollRef.current = setInterval(async () => {
+        try {
+          const job = await getScheduleJob(jobId);
+          if (job.state === 'finished') {
+            clearInterval(pollRef.current);
+            setGenerating(false);
+            if (job.result?.status === 'done') {
+              toast.success('Schedule generated successfully.');
+              getScheduledExams({ termId: selectedTermId, phase: selectedPhaseNum })
+                .then(data => setScheduledExams(Array.isArray(data) ? data : []))
+                .catch(() => {});
+            } else {
+              setGenError(job.result?.message || 'Scheduling failed. Check data and try again.');
+            }
+          }
+        } catch {
+          clearInterval(pollRef.current);
+          setGenerating(false);
+          setGenError('Failed to poll job status.');
+        }
+      }, 5000);
+    } catch (e) {
+      setGenerating(false);
+      setGenError(e.message || 'Could not reach the scheduler.');
+    }
+  };
 
   const handleRemind = () => toast.info('Feature not yet implemented');
 
@@ -538,12 +575,6 @@ const SchedulingManagement = ({ restrictedDepts }) => {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
               <Calendar size={15} />
               <span className="text-sm font-medium">Schedule Generation</span>
-              <span style={{
-                fontSize: 11, padding: '2px 8px', borderRadius: 10,
-                background: '#f3f4f6', color: '#6b7280', fontWeight: 500,
-              }}>
-                Not yet implemented
-              </span>
             </div>
             <p className="text-xs text-muted">
               Once all coordinators have submitted their preferences, the scheduling algorithm will generate an optimised exam timetable.
@@ -574,20 +605,31 @@ const SchedulingManagement = ({ restrictedDepts }) => {
                 </p>
               </div>
             )}
+            {genError && (
+              <div style={{
+                display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 12,
+                padding: '8px 12px',
+                background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6,
+              }}>
+                <AlertTriangle size={14} style={{ color: '#dc2626', flexShrink: 0, marginTop: 1 }} />
+                <p className="text-xs" style={{ color: '#b91c1c', margin: 0 }}>{genError}</p>
+              </div>
+            )}
           </div>
           {hasSchedule ? (
             <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
               <button
                 className="btn btn-outline btn-sm"
-                disabled
-                style={{ opacity: 0.45, cursor: 'not-allowed', whiteSpace: 'nowrap' }}
+                onClick={handleGenerate}
+                disabled={generating}
+                style={{ whiteSpace: 'nowrap' }}
               >
-                Regenerate
+                {generating ? 'Generating…' : 'Regenerate'}
               </button>
               <button
                 className="btn btn-primary btn-sm"
                 onClick={() => setShowScheduleCalendar(true)}
-                style={{ gap: 6, whiteSpace: 'nowrap' }}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}
               >
                 <Calendar size={14} />
                 View Schedule
@@ -596,11 +638,12 @@ const SchedulingManagement = ({ restrictedDepts }) => {
           ) : (
             <button
               className="btn btn-primary btn-sm"
-              disabled
-              style={{ opacity: 0.45, cursor: 'not-allowed', whiteSpace: 'nowrap', flexShrink: 0 }}
+              onClick={handleGenerate}
+              disabled={generating || !selectedTermId}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', flexShrink: 0 }}
             >
               <Calendar size={14} />
-              Generate Schedule
+              {generating ? 'Generating…' : 'Generate Schedule'}
             </button>
           )}
         </div>

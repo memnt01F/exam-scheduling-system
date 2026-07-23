@@ -322,6 +322,19 @@ export async function bulkSaveAssignments(assignments, assignedBy) {
   });
 }
 
+/* ──────────────────────────── Schedule generation ──────────────────────────── */
+
+export async function generateSchedule(options = {}) {
+  return request("/schedule/generate", {
+    method: "POST",
+    body: JSON.stringify(options),
+  });
+}
+
+export async function getScheduleJob(jobId) {
+  return request(`/schedule/jobs/${jobId}`);
+}
+
 /**
  * Probe whether the backend is reachable. Used so the UI can fall back
  * to local mock data when running in the hosted preview (no backend).
