@@ -40,10 +40,10 @@ const getWeekStart = (date) => {
 // Maps a score to visual style. Returns null when score is undefined (day outside window).
 const scoreStyle = (score) => {
   if (score === undefined) return null;
-  if (score < 0)   return { bg: 'rgba(107,114,128,0.13)', outlineColor: 'rgba(107,114,128,0.3)', dot: '#6b7280', clickable: false };
-  if (score < 0.4) return { bg: 'rgba(239,68,68,0.10)',   outlineColor: 'rgba(239,68,68,0.35)',  dot: '#ef4444', clickable: true  };
-  if (score < 0.7) return { bg: 'rgba(245,158,11,0.11)',  outlineColor: 'rgba(245,158,11,0.4)',  dot: '#f59e0b', clickable: true  };
-  return             { bg: 'rgba(22,163,74,0.10)',    outlineColor: 'rgba(22,163,74,0.4)',   dot: '#16a34a', clickable: true  };
+  if (score < 0)   return { bg: 'rgba(107,114,128,0.13)', outline: 'none',                           dot: '#6b7280', clickable: false };
+  if (score < 0.4) return { bg: 'rgba(239,68,68,0.17)',   outline: '2px solid rgba(239,68,68,0.26)', dot: '#ef4444', clickable: true  };
+  if (score < 0.7) return { bg: 'rgba(245,158,11,0.17)',  outline: '2px solid rgba(245,158,11,0.28)', dot: '#f59e0b', clickable: true  };
+  return             { bg: 'rgba(22,163,74,0.17)',   outline: '2px solid rgba(22,163,74,0.28)',  dot: '#16a34a', clickable: true  };
 };
 
 const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term, onBack, readOnly = false }) => {
@@ -304,27 +304,49 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
   const selectedDayBookings = selectedDay ? bookingsOnDate(selectedDay) : [];
   const currentExamDateStr  = selectedExam ? toDateStr(selectedExam.examDate) : null;
 
-  const ScoreLegend = () => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '6px 20px', borderBottom: '1px solid var(--clr-border)', fontSize: 11, color: 'var(--clr-muted)', flexWrap: 'wrap' }}>
-      <span style={{ fontWeight: 500 }}>Score:</span>
-      {[
-        { dot: '#6b7280', label: 'Unavailable' },
-        { dot: '#ef4444', label: 'Poor' },
-        { dot: '#f59e0b', label: 'Acceptable' },
-        { dot: '#16a34a', label: 'Good' },
-      ].map(({ dot, label }) => (
-        <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <span style={{ width: 8, height: 8, borderRadius: '50%', background: dot, flexShrink: 0, display: 'inline-block' }} />
-          {label}
-        </span>
-      ))}
-      {rescheduleMode && (
-        <span style={{ marginLeft: 'auto', color: 'var(--clr-primary)', fontWeight: 600 }}>
-          Click a scored day to reschedule
-        </span>
-      )}
-    </div>
-  );
+  const ScoreLegend = () => {
+    const [tip, setTip] = useState(null); // { text, x, y }
+    const items = [
+      { dot: '#6b7280', label: 'Unavailable', tip: 'Cannot be scheduled — a student in this course has another exam on this day, or the day is a vacation/blocked date.' },
+      { dot: '#ef4444', label: 'Poor',        tip: 'Feasible but not ideal — many shared-student pairs clash nearby or timing is unfavourable.' },
+      { dot: '#f59e0b', label: 'Acceptable',  tip: 'Workable option — some concerns but no hard conflicts.' },
+      { dot: '#16a34a', label: 'Good',        tip: 'Best available days — minimal student conflicts and preferred timing.' },
+    ];
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '6px 20px', borderBottom: '1px solid var(--clr-border)', fontSize: 11, color: 'var(--clr-muted)', flexWrap: 'wrap', position: 'relative' }}>
+        <span style={{ fontWeight: 500 }}>Score:</span>
+        {items.map(({ dot, label, tip: text }) => (
+          <span
+            key={label}
+            onMouseEnter={e => { const r = e.currentTarget.getBoundingClientRect(); setTip({ text, x: r.left, y: r.bottom }); }}
+            onMouseLeave={() => setTip(null)}
+            style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'default' }}
+          >
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: dot, flexShrink: 0, display: 'inline-block' }} />
+            {label}
+          </span>
+        ))}
+        {rescheduleMode && (
+          <span style={{ marginLeft: 'auto', color: 'var(--clr-primary)', fontWeight: 600 }}>
+            Click a scored day to reschedule
+          </span>
+        )}
+        {tip && (
+          <div style={{
+            position: 'fixed', zIndex: 300,
+            left: tip.x, top: tip.y + 6,
+            background: '#1f2937', color: '#f9fafb',
+            fontSize: 11, lineHeight: 1.45,
+            padding: '5px 9px', borderRadius: 5,
+            pointerEvents: 'none', maxWidth: 240,
+            boxShadow: '0 3px 10px rgba(0,0,0,0.25)',
+          }}>
+            {tip.text}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-4">
@@ -463,7 +485,7 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
                               : 'var(--clr-card)';
 
                       const cellOutline = ss
-                        ? `2px solid ${ss.outlineColor}`
+                        ? ss.outline
                         : isSelected ? '2px solid var(--clr-primary)' : 'none';
 
                       return (
@@ -558,7 +580,7 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
                               : blockReason
                                 ? 'color-mix(in srgb, #ef4444 7%, var(--clr-card))'
                                 : 'var(--clr-card)',
-                          outline: ss ? `2px solid ${ss.outlineColor}` : isSelected ? '2px solid var(--clr-primary)' : 'none',
+                          outline: ss ? ss.outline : isSelected ? '2px solid var(--clr-primary)' : 'none',
                           outlineOffset: -2,
                           transition: 'background 0.1s',
                         }}
