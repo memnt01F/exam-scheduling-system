@@ -217,7 +217,7 @@ const SchedulingManagement = ({ restrictedDepts }) => {
     setGenerating(true);
     setGenError(null);
     try {
-      const { jobId } = await generateSchedule();
+      const { jobId } = await generateSchedule({ phaseNumber: selectedPhaseNum });
       pollRef.current = setInterval(async () => {
         try {
           const job = await getScheduleJob(jobId);

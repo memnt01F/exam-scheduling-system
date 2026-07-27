@@ -322,6 +322,25 @@ export async function bulkSaveAssignments(assignments, assignedBy) {
   });
 }
 
+/* ──────────────────────────── Exam Groups ──────────────────────────── */
+
+export async function getExamGroups(termId) {
+  const qs = termId ? `?termId=${termId}` : '';
+  return request(`/exam-groups${qs}`);
+}
+
+export async function createExamGroup(payload) {
+  return request('/exam-groups', { method: 'POST', body: JSON.stringify(payload) });
+}
+
+export async function updateExamGroup(id, payload) {
+  return request(`/exam-groups/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+}
+
+export async function deleteExamGroup(id) {
+  return request(`/exam-groups/${id}`, { method: 'DELETE' });
+}
+
 /* ──────────────────────────── Schedule generation ──────────────────────────── */
 
 export async function generateSchedule(options = {}) {

@@ -5,7 +5,7 @@ import { useCourses } from '../context/CoursesContext.jsx';
 import { departments } from '../lib/mock-admin-data.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import {
-  Users, Settings, Database, ClipboardList, BookOpen, Trash2, Plus, X, Pencil, Upload, FileSpreadsheet, RefreshCw, Calendar, UserCheck,
+  Users, Settings, Database, ClipboardList, BookOpen, Trash2, Plus, X, Pencil, Upload, FileSpreadsheet, RefreshCw, Calendar, UserCheck, Check,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import UserManagement from '../components/admin/UserManagement.jsx';
@@ -13,7 +13,7 @@ import ReferenceData from '../components/admin/ReferenceData.jsx';
 import SchedulingManagement from '../components/admin/SchedulingManagement.jsx';
 import AddTermModal from '../components/admin/AddTermModal.jsx';
 import ProctorSummary from '../components/admin/ProctorSummary.jsx';
-import { getEnrollmentStats, uploadEnrollments, getBookings, deleteBooking } from '../services/api.js';
+import { getEnrollmentStats, uploadEnrollments, getBookings, deleteBooking, getExamGroups, createExamGroup, updateExamGroup, deleteExamGroup } from '../services/api.js';
 
 const tabs = [
   { id: 'users',      label: 'User Management',      icon: Users },
@@ -131,11 +131,33 @@ const SystemSettings = () => {
   const [uploading, setUploading]             = useState(false);
   const [confirmReplace, setConfirmReplace]   = useState(null);
 
+  // Exam groups state
+  const [examGroups, setExamGroups]               = useState([]);
+  const [examGroupTermId, setExamGroupTermId]      = useState('');
+  const [showGroupModal, setShowGroupModal]        = useState(false);
+  const [editingGroup, setEditingGroup]            = useState(null);
+  const [confirmDeleteGroup, setConfirmDeleteGroup] = useState(null);
+
   useEffect(() => {
     getEnrollmentStats()
       .then(data => setEnrollmentStats(data.stats || []))
       .catch(() => {});
   }, []);
+
+  // Set default exam group term to the first term
+  useEffect(() => {
+    if (!examGroupTermId && terms.length > 0) {
+      setExamGroupTermId(terms[terms.length - 1]._serverId || terms[terms.length - 1].id);
+    }
+  }, [terms]);
+
+  // Reload groups when term changes
+  useEffect(() => {
+    if (!examGroupTermId) return;
+    getExamGroups(examGroupTermId)
+      .then(data => setExamGroups(Array.isArray(data) ? data : []))
+      .catch(() => setExamGroups([]));
+  }, [examGroupTermId]);
 
   const handleEnrollmentUploadForTerm = (termId, termName, file) => {
     const existing = enrollmentStats.find(s => String(s.termId) === String(termId));
@@ -337,6 +359,126 @@ const SystemSettings = () => {
         </div>
       </div>
 
+      {/* Exam Groups */}
+      <div className="card">
+        <div className="card-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 16 }}>
+          <div className="card-title"><Database size={16} /> Exam Groups</div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <select
+              className="form-input"
+              style={{ width: 160, height: 32, fontSize: 13 }}
+              value={examGroupTermId}
+              onChange={e => setExamGroupTermId(e.target.value)}
+            >
+              {terms.map(t => (
+                <option key={t._serverId || t.id} value={t._serverId || t.id}>{t.name}</option>
+              ))}
+            </select>
+            <button className="btn btn-primary btn-sm" onClick={() => { setEditingGroup(null); setShowGroupModal(true); }}>
+              <Plus size={14} /> Add Group
+            </button>
+          </div>
+        </div>
+        <div className="card-content">
+          <p className="text-sm text-muted" style={{ marginBottom: 12 }}>
+            Courses in the same exam group are scheduled on one exclusive day. The scheduler reads this directly.
+          </p>
+          {examGroups.length === 0 ? (
+            <p className="text-sm text-muted" style={{ textAlign: 'center', padding: '16px 0' }}>No exam groups for this term.</p>
+          ) : (
+            <div className="data-table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr><th>Group Name</th><th>Courses</th><th style={{ width: 80 }}></th></tr>
+                </thead>
+                <tbody>
+                  {examGroups.map(g => (
+                    <tr key={g._id}>
+                      <td className="font-medium">{g.name}</td>
+                      <td>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                          {g.courseCodes.map(c => (
+                            <span key={c} className="badge badge-secondary" style={{ fontSize: 11 }}>{c}</span>
+                          ))}
+                        </div>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: 2 }}>
+                          <button className="btn btn-ghost btn-sm" title="Edit" onClick={() => { setEditingGroup(g); setShowGroupModal(true); }}>
+                            <Pencil size={14} />
+                          </button>
+                          <button className="btn btn-ghost btn-sm" title="Delete" onClick={() => setConfirmDeleteGroup(g)}>
+                            <Trash2 size={14} color="var(--clr-danger)" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Exam Group modal (add / edit) */}
+      {showGroupModal && (
+        <ExamGroupModal
+          group={editingGroup}
+          termId={examGroupTermId}
+          onClose={() => setShowGroupModal(false)}
+          onSave={async (payload) => {
+            try {
+              if (editingGroup) {
+                await updateExamGroup(editingGroup._id, payload);
+                toast.success('Exam group updated');
+              } else {
+                await createExamGroup({ ...payload, termId: examGroupTermId });
+                toast.success('Exam group created');
+              }
+              const data = await getExamGroups(examGroupTermId);
+              setExamGroups(Array.isArray(data) ? data : []);
+              setShowGroupModal(false);
+            } catch (err) {
+              toast.error(err.message || 'Failed to save exam group');
+            }
+          }}
+        />
+      )}
+
+      {/* Exam Group delete confirmation */}
+      {confirmDeleteGroup && (
+        <div className="modal-overlay" onClick={() => setConfirmDeleteGroup(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <h2 className="modal-title">Delete Exam Group</h2>
+            <p className="modal-desc">
+              Delete <strong>{confirmDeleteGroup.name}</strong>? This cannot be undone.
+            </p>
+            <div className="modal-footer">
+              <button className="btn btn-outline" onClick={() => setConfirmDeleteGroup(null)}>Cancel</button>
+              <button
+                className="btn btn-primary"
+                style={{ background: 'var(--clr-danger)', borderColor: 'var(--clr-danger)' }}
+                onClick={async () => {
+                  try {
+                    await deleteExamGroup(confirmDeleteGroup._id);
+                    toast.success('Exam group deleted');
+                    const data = await getExamGroups(examGroupTermId);
+                    setExamGroups(Array.isArray(data) ? data : []);
+                  } catch (err) {
+                    toast.error(err.message || 'Failed to delete');
+                  } finally {
+                    setConfirmDeleteGroup(null);
+                  }
+                }}
+              >
+                <Trash2 size={14} /> Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Manage Phases modal */}
       {managingPhasesTerm && (
         <ManagePhasesModal
@@ -419,6 +561,105 @@ const SystemSettings = () => {
           </div>
         </div>
       )}
+    </div>
+  );
+};
+
+/* ── Exam Group Modal ── */
+const ExamGroupModal = ({ group, termId, onClose, onSave }) => {
+  const { courses } = useCourses();
+  const [name, setName] = useState(group?.name || '');
+  const [codes, setCodes] = useState(group?.courseCodes || []);
+  const [courseSearch, setCourseSearch] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const toggleCode = (code) => {
+    setCodes(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]);
+  };
+
+  const filteredCourses = courses.filter(c => {
+    const q = courseSearch.replace(/\s+/g, '').toLowerCase();
+    return !q || c.code.replace(/\s+/g, '').toLowerCase().includes(q) || (c.name || '').toLowerCase().includes(q);
+  });
+
+  const handleSave = async () => {
+    if (!name.trim()) { toast.error('Group name is required'); return; }
+    if (codes.length < 2) { toast.error('At least 2 course codes are required'); return; }
+    setSaving(true);
+    await onSave({ name: name.trim(), courseCodes: codes });
+    setSaving(false);
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+      <div className="card" style={{ width: 480, maxWidth: '95vw' }}>
+        <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div className="card-title"><Database size={16} /> {group ? 'Edit Exam Group' : 'Add Exam Group'}</div>
+          <button className="btn btn-ghost btn-sm" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="card-content space-y-3">
+          <div>
+            <label className="text-sm font-medium">Group Name</label>
+            <input
+              className="form-input"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="e.g. MATHGroup"
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Courses</label>
+            <input
+              className="form-input"
+              placeholder="Search courses..."
+              value={courseSearch}
+              onChange={e => setCourseSearch(e.target.value)}
+              style={{ marginBottom: 8 }}
+            />
+            <div style={{ border: '1px solid var(--clr-border)', borderRadius: 8, maxHeight: 200, overflowY: 'auto', padding: 4 }}>
+              {filteredCourses.length === 0 && (
+                <div style={{ padding: 12, textAlign: 'center', color: 'var(--clr-muted)', fontSize: 13 }}>No courses found</div>
+              )}
+              {filteredCourses.map(c => {
+                const selected = codes.includes(c.code);
+                return (
+                  <div
+                    key={c.id}
+                    onClick={() => toggleCode(c.code)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px',
+                      borderRadius: 6, cursor: 'pointer', fontSize: 13,
+                      background: selected ? 'var(--clr-primary-light, hsl(215 80% 95%))' : 'transparent',
+                    }}
+                  >
+                    <span style={{
+                      width: 18, height: 18, borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      border: selected ? 'none' : '1.5px solid var(--clr-border)',
+                      background: selected ? 'var(--clr-primary)' : 'transparent',
+                      color: '#fff', flexShrink: 0,
+                    }}>
+                      {selected && <Check size={12} />}
+                    </span>
+                    <span className="font-medium">{c.code}</span>
+                    <span style={{ color: 'var(--clr-muted)' }}>— {c.name}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--clr-muted)', marginTop: 4 }}>
+              {codes.length === 0
+                ? 'Select at least 2 courses.'
+                : <>{codes.length} course{codes.length !== 1 ? 's' : ''} selected{codes.length < 2 && <span style={{ color: 'var(--clr-danger, #dc2626)' }}> — minimum 2 required</span>}</>}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, paddingTop: 8, justifyContent: 'flex-end' }}>
+            <button className="btn btn-outline btn-sm" onClick={onClose} disabled={saving}>Cancel</button>
+            <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>
+              {saving ? 'Saving…' : group ? 'Update' : 'Create'}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

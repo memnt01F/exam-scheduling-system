@@ -8,6 +8,7 @@ router.post("/generate", async (req, res) => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        phaseNumber: req.body?.phaseNumber ?? 0,
         dryRun: !!req.body?.dryRun,
         maxExamsPerDay: req.body?.maxExamsPerDay,
       }),
