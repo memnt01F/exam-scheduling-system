@@ -309,9 +309,9 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
       <span style={{ fontWeight: 500 }}>Score:</span>
       {[
         { dot: '#6b7280', label: 'Unavailable' },
-        { dot: '#ef4444', label: 'Poor (0 – 0.4)' },
-        { dot: '#f59e0b', label: 'Acceptable (0.4 – 0.7)' },
-        { dot: '#16a34a', label: 'Good (0.7 – 1.0)' },
+        { dot: '#ef4444', label: 'Poor' },
+        { dot: '#f59e0b', label: 'Acceptable' },
+        { dot: '#16a34a', label: 'Good' },
       ].map(({ dot, label }) => (
         <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <span style={{ width: 8, height: 8, borderRadius: '50%', background: dot, flexShrink: 0, display: 'inline-block' }} />
