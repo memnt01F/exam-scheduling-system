@@ -28,4 +28,15 @@ router.get("/jobs/:id", async (req, res) => {
   }
 });
 
+router.get("/day-scores", async (req, res) => {
+  try {
+    const { courseCode, examType, termName } = req.query;
+    const qs = new URLSearchParams({ courseCode, examType, termName }).toString();
+    const r = await fetch(`${SCHEDULER_URL}/day-scores?${qs}`);
+    res.status(r.status).json(await r.json());
+  } catch (err) {
+    res.status(502).json({ message: `Scheduler unreachable: ${err.message}` });
+  }
+});
+
 module.exports = router;

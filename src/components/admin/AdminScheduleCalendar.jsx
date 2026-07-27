@@ -1,18 +1,18 @@
 import { useState, useMemo, useEffect } from 'react';
 import { ArrowLeft, CheckCircle, ChevronLeft, ChevronRight, X } from 'lucide-react';
-import { updateScheduledExam, deleteScheduledExam, confirmSchedule, getBookings } from '../../services/api.js';
+import { updateScheduledExam, deleteScheduledExam, confirmSchedule, getBookings, getDayScores } from '../../services/api.js';
 import { toast } from 'sonner';
 
 const DAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
-const MAX_CHIPS = 3; // max chips shown per cell before "+N more"
+const MAX_CHIPS = 3;
 
 const fmtCode = (code) => String(code).replace(/\(FINALPROGRAMMING\)/gi, '(lab)');
 
 const EXAM_TYPE_COLOR = {
-  'Major 1': '#14532d', // darkest
+  'Major 1': '#14532d',
   'Major 2': '#166534',
-  'Major 3': '#1a7a4c', // site primary
-  'Mid':     '#16a34a', // lightest
+  'Major 3': '#1a7a4c',
+  'Mid':     '#16a34a',
 };
 const examColor = (examType) => EXAM_TYPE_COLOR[examType] || '#1a7a4c';
 
@@ -37,24 +37,35 @@ const getWeekStart = (date) => {
   return d;
 };
 
+// Maps a score to visual style. Returns null when score is undefined (day outside window).
+const scoreStyle = (score) => {
+  if (score === undefined) return null;
+  if (score < 0)   return { bg: 'rgba(107,114,128,0.13)', outlineColor: 'rgba(107,114,128,0.3)', dot: '#6b7280', clickable: false };
+  if (score < 0.4) return { bg: 'rgba(239,68,68,0.10)',   outlineColor: 'rgba(239,68,68,0.35)',  dot: '#ef4444', clickable: true  };
+  if (score < 0.7) return { bg: 'rgba(245,158,11,0.11)',  outlineColor: 'rgba(245,158,11,0.4)',  dot: '#f59e0b', clickable: true  };
+  return             { bg: 'rgba(22,163,74,0.10)',    outlineColor: 'rgba(22,163,74,0.4)',   dot: '#16a34a', clickable: true  };
+};
+
 const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term, onBack, readOnly = false }) => {
   const [exams, setExams]           = useState(initialExams || []);
   const [viewMode, setViewMode]     = useState('month');
-  const [editExam, setEditExam]     = useState(null);
-  const [editDate, setEditDate]     = useState('');
-  const [editRoom, setEditRoom]     = useState('');
   const [saving, setSaving]         = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [selectedDay, setSelectedDay] = useState(null);
 
-  // ── Term bounds ──
+  // Scoring state
+  const [selectedExam, setSelectedExam]           = useState(null);
+  const [dayScores, setDayScores]                 = useState(null);   // { dateStr: score } | null
+  const [loadingScores, setLoadingScores]         = useState(false);
+  const [rescheduleMode, setRescheduleMode]       = useState(false);
+  const [rescheduleConfirm, setRescheduleConfirm] = useState(null);   // { date, dateStr }
+  const [confirmDelete, setConfirmDelete]         = useState(null);   // exam object
+
+  // Term bounds
   const termStartLocal = term?.startDate ? localDate(term.startDate) : null;
   const termEndLocal   = term?.endDate   ? localDate(term.endDate)   : null;
-
-  const termStartMonth = termStartLocal
-    ? new Date(termStartLocal.getFullYear(), termStartLocal.getMonth(), 1) : null;
-  const termEndMonth = termEndLocal
-    ? new Date(termEndLocal.getFullYear(), termEndLocal.getMonth(), 1) : null;
+  const termStartMonth = termStartLocal ? new Date(termStartLocal.getFullYear(), termStartLocal.getMonth(), 1) : null;
+  const termEndMonth   = termEndLocal   ? new Date(termEndLocal.getFullYear(),   termEndLocal.getMonth(),   1) : null;
 
   const [currentDate, setCurrentDate] = useState(() => {
     if (term?.startDate) return localDate(term.startDate);
@@ -84,7 +95,6 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
   const todayStr     = toDateStr(new Date());
   const blockedDates = useMemo(() => term?.calendarData?.blockedDates || {}, [term]);
 
-  // ── Academic week number ──
   const getAcademicWeek = (date) => {
     if (!termStartLocal || !date) return null;
     const cellMidnight = new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -94,23 +104,13 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
     return Math.floor(daysDiff / 7) + 1;
   };
 
-  const examsOnDate = (date) => {
-    if (!date) return [];
-    const ds = toDateStr(date);
-    return exams.filter(e => toDateStr(e.examDate) === ds);
-  };
+  const examsOnDate    = (date) => { if (!date) return []; const ds = toDateStr(date); return exams.filter(e => toDateStr(e.examDate) === ds); };
+  const bookingsOnDate = (date) => { if (!date) return []; const ds = toDateStr(date); return bookings.filter(b => toDateStr(b.examDate) === ds); };
 
-  const bookingsOnDate = (date) => {
-    if (!date) return [];
-    const ds = toDateStr(date);
-    return bookings.filter(b => toDateStr(b.examDate) === ds);
-  };
-
-  // ── Month grid ──
+  // Month grid
   const monthGrid = useMemo(() => {
-    const year  = currentDate.getFullYear();
-    const month = currentDate.getMonth();
-    const days  = [];
+    const year = currentDate.getFullYear(), month = currentDate.getMonth();
+    const days = [];
     const first = new Date(year, month, 1);
     for (let i = 0; i < first.getDay(); i++) days.push(null);
     const last = new Date(year, month + 1, 0);
@@ -121,24 +121,15 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
     return { weeks, month };
   }, [currentDate]);
 
-  // ── Week days ──
   const weekDays = useMemo(() => {
     const start = getWeekStart(currentDate);
-    return Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(start);
-      d.setDate(d.getDate() + i);
-      return d;
-    });
+    return Array.from({ length: 7 }, (_, i) => { const d = new Date(start); d.setDate(d.getDate() + i); return d; });
   }, [currentDate]);
 
-  // ── Navigation ──
+  // Navigation
   const currentMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
-  const canGoPrev = viewMode === 'month'
-    ? !termStartMonth || currentMonth > termStartMonth
-    : true;
-  const canGoNext = viewMode === 'month'
-    ? !termEndMonth || currentMonth < termEndMonth
-    : true;
+  const canGoPrev = viewMode === 'month' ? !termStartMonth || currentMonth > termStartMonth : true;
+  const canGoNext = viewMode === 'month' ? !termEndMonth || currentMonth < termEndMonth : true;
 
   const prevPeriod = () => {
     if (!canGoPrev) return;
@@ -146,7 +137,6 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
     if (viewMode === 'month') setCurrentDate(d => new Date(d.getFullYear(), d.getMonth() - 1, 1));
     else setCurrentDate(d => { const n = new Date(d); n.setDate(n.getDate() - 7); return n; });
   };
-
   const nextPeriod = () => {
     if (!canGoNext) return;
     setSelectedDay(null);
@@ -155,9 +145,7 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
   };
 
   const periodLabel = () => {
-    if (viewMode === 'month') {
-      return currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-    }
+    if (viewMode === 'month') return currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
     const ws = getWeekStart(currentDate);
     const we = new Date(ws); we.setDate(we.getDate() + 6);
     const wk = getAcademicWeek(ws);
@@ -165,35 +153,70 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
     return wk ? `${range} · Week ${wk}` : range;
   };
 
-  // ── Edit handlers ──
-  const openEdit  = (exam) => { setEditExam(exam); setEditDate(toDateStr(exam.examDate)); setEditRoom(exam.room || ''); };
-  const closeEdit = () => { setEditExam(null); setEditDate(''); setEditRoom(''); };
-
-  const handleSaveEdit = async () => {
-    if (!editDate) { toast.error('Please select a date'); return; }
-    if (blockedDates[editDate]) {
-      toast.error(`${editDate} is a blocked date: ${blockedDates[editDate]}`);
-      return;
-    }
-    setSaving(true);
-    try {
-      const updated = await updateScheduledExam(editExam._id, { examDate: editDate, room: editRoom, updatedBy: 'admin' });
-      setExams(prev => prev.map(e => e._id === editExam._id ? { ...e, ...updated } : e));
-      toast.success('Exam rescheduled');
-      closeEdit();
-    } catch { toast.error('Failed to save changes'); }
-    finally { setSaving(false); }
+  // Scoring handlers
+  const clearSelection = () => {
+    setSelectedExam(null);
+    setDayScores(null);
+    setRescheduleMode(false);
+    setRescheduleConfirm(null);
   };
 
-  const handleDelete = async () => {
+  const handleChipClick = async (e, exam) => {
+    e.stopPropagation();
+    if (isConfirmed) return;
+    if (selectedExam?._id === exam._id) { clearSelection(); return; }
+
+    setSelectedExam(exam);
+    setRescheduleMode(false);
+    setDayScores(null);
+    setLoadingScores(true);
+
+    try {
+      const result = await getDayScores({ courseCode: exam.courseCode, examType: exam.examType, termName: term?.name });
+      const map = {};
+      (result.dates || []).forEach((d, i) => { map[d] = result.scores[i]; });
+      setDayScores(map);
+    } catch {
+      toast.error('Failed to load day scores');
+      setDayScores({});
+    } finally {
+      setLoadingScores(false);
+    }
+  };
+
+  const handleCellClick = (day) => {
+    if (!day) return;
+    if (rescheduleMode && selectedExam && dayScores) {
+      const dateStr = toDateStr(day);
+      const score = dayScores[dateStr];
+      if (score !== undefined && score >= 0) setRescheduleConfirm({ date: day, dateStr });
+      return;
+    }
+    setSelectedDay(prev => prev && toDateStr(prev) === toDateStr(day) ? null : day);
+  };
+
+  const handleConfirmReschedule = async () => {
+    if (!rescheduleConfirm || !selectedExam) return;
     setSaving(true);
     try {
-      await deleteScheduledExam(editExam._id);
-      setExams(prev => prev.filter(e => e._id !== editExam._id));
+      const updated = await updateScheduledExam(selectedExam._id, { examDate: rescheduleConfirm.dateStr, updatedBy: 'admin' });
+      setExams(prev => prev.map(e => e._id === selectedExam._id ? { ...e, ...updated } : e));
+      toast.success('Exam rescheduled');
+      clearSelection();
+    } catch { toast.error('Failed to reschedule exam'); }
+    finally { setSaving(false); setRescheduleConfirm(null); }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!confirmDelete) return;
+    setSaving(true);
+    try {
+      await deleteScheduledExam(confirmDelete._id);
+      setExams(prev => prev.filter(e => e._id !== confirmDelete._id));
       toast.success('Exam removed from schedule');
-      closeEdit();
+      if (selectedExam?._id === confirmDelete._id) clearSelection();
     } catch { toast.error('Failed to remove exam'); }
-    finally { setSaving(false); }
+    finally { setSaving(false); setConfirmDelete(null); }
   };
 
   const handleConfirm = async () => {
@@ -207,21 +230,27 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
     finally { setConfirming(false); }
   };
 
-  // ── Compact chip (in grid cell) ──
-  const ExamChip = ({ exam }) => (
-    <div
-      onClick={(e) => { e.stopPropagation(); !isConfirmed && openEdit(exam); }}
-      title={`${fmtCode(exam.courseCode)} — ${exam.examType}`}
-      style={{
-        background: examColor(exam.examType), color: '#fff',
-        borderRadius: 3, padding: '2px 7px', fontSize: 11, fontWeight: 500,
-        cursor: isConfirmed ? 'default' : 'pointer',
-        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 2,
-      }}
-    >
-      {fmtCode(exam.courseCode)}
-    </div>
-  );
+  // Chips
+  const ExamChip = ({ exam }) => {
+    const isSelected = selectedExam?._id === exam._id;
+    return (
+      <div
+        onClick={(e) => handleChipClick(e, exam)}
+        title={`${fmtCode(exam.courseCode)} — ${exam.examType}${isConfirmed ? '' : '\nClick to see scoring'}`}
+        style={{
+          background: isSelected ? '#fff' : examColor(exam.examType),
+          color: isSelected ? examColor(exam.examType) : '#fff',
+          border: isSelected ? `2px solid ${examColor(exam.examType)}` : '2px solid transparent',
+          borderRadius: 3, padding: '2px 7px', fontSize: 11, fontWeight: 600,
+          cursor: isConfirmed ? 'default' : 'pointer',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 2,
+          transition: 'all 0.1s',
+        }}
+      >
+        {fmtCode(exam.courseCode)}
+      </div>
+    );
+  };
 
   const BookingChip = ({ booking }) => (
     <div
@@ -236,21 +265,26 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
     </div>
   );
 
-  // ── Full-width rows for the side panel ──
-  const ExamPanelRow = ({ exam }) => (
-    <div
-      onClick={() => !isConfirmed && openEdit(exam)}
-      style={{
-        background: examColor(exam.examType), color: '#fff',
-        borderRadius: 6, padding: '8px 12px', marginBottom: 6,
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        cursor: isConfirmed ? 'default' : 'pointer', fontSize: 12, fontWeight: 500,
-      }}
-    >
-      <span style={{ fontWeight: 600 }}>{fmtCode(exam.courseCode)}</span>
-      <span style={{ opacity: 0.85, fontSize: 11 }}>{exam.examType}</span>
-    </div>
-  );
+  const ExamPanelRow = ({ exam }) => {
+    const isSelected = selectedExam?._id === exam._id;
+    return (
+      <div
+        onClick={(e) => handleChipClick(e, exam)}
+        style={{
+          background: isSelected ? '#fff' : examColor(exam.examType),
+          color: isSelected ? examColor(exam.examType) : '#fff',
+          border: isSelected ? `2px solid ${examColor(exam.examType)}` : '2px solid transparent',
+          borderRadius: 6, padding: '8px 12px', marginBottom: 6,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          cursor: isConfirmed ? 'default' : 'pointer', fontSize: 12, fontWeight: 500,
+          transition: 'all 0.1s',
+        }}
+      >
+        <span style={{ fontWeight: 600 }}>{fmtCode(exam.courseCode)}</span>
+        <span style={{ opacity: 0.85, fontSize: 11 }}>{exam.examType}</span>
+      </div>
+    );
+  };
 
   const BookingPanelRow = ({ booking }) => (
     <div
@@ -266,14 +300,36 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
     </div>
   );
 
-  // ── Selected day data ──
   const selectedDayExams    = selectedDay ? examsOnDate(selectedDay) : [];
   const selectedDayBookings = selectedDay ? bookingsOnDate(selectedDay) : [];
+  const currentExamDateStr  = selectedExam ? toDateStr(selectedExam.examDate) : null;
+
+  const ScoreLegend = () => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '6px 20px', borderBottom: '1px solid var(--clr-border)', fontSize: 11, color: 'var(--clr-muted)', flexWrap: 'wrap' }}>
+      <span style={{ fontWeight: 500 }}>Score:</span>
+      {[
+        { dot: '#6b7280', label: 'Unavailable' },
+        { dot: '#ef4444', label: 'Poor (0 – 0.4)' },
+        { dot: '#f59e0b', label: 'Acceptable (0.4 – 0.7)' },
+        { dot: '#16a34a', label: 'Good (0.7 – 1.0)' },
+      ].map(({ dot, label }) => (
+        <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: dot, flexShrink: 0, display: 'inline-block' }} />
+          {label}
+        </span>
+      ))}
+      {rescheduleMode && (
+        <span style={{ marginLeft: 'auto', color: 'var(--clr-primary)', fontWeight: 600 }}>
+          Click a scored day to reschedule
+        </span>
+      )}
+    </div>
+  );
 
   return (
     <div className="space-y-4">
 
-      {/* ── Header ── */}
+      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           {onBack && (
@@ -283,46 +339,26 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
           )}
           <div>
             <span className="font-medium" style={{ fontSize: 15 }}>Exams Schedule</span>
-            {term && (
-              <span className="text-xs text-muted" style={{ marginLeft: 8 }}>
-                {term.name} · Phase {phaseNumber}
-              </span>
-            )}
+            {term && <span className="text-xs text-muted" style={{ marginLeft: 8 }}>{term.name} · Phase {phaseNumber}</span>}
           </div>
         </div>
-
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ display: 'flex', gap: 2, border: '1px solid var(--clr-border)', borderRadius: 6, padding: 2 }}>
             {['Month', 'Week'].map(label => {
               const mode = label.toLowerCase();
               return (
-                <button
-                  key={mode}
-                  onClick={() => { setViewMode(mode); setSelectedDay(null); }}
-                  className={`btn btn-sm ${viewMode === mode ? 'btn-primary' : 'btn-ghost'}`}
-                  style={{ fontSize: 12, minWidth: 52 }}
-                >
+                <button key={mode} onClick={() => { setViewMode(mode); setSelectedDay(null); }} className={`btn btn-sm ${viewMode === mode ? 'btn-primary' : 'btn-ghost'}`} style={{ fontSize: 12, minWidth: 52 }}>
                   {label}
                 </button>
               );
             })}
           </div>
-
           {readOnly ? (
-            <span style={{
-              fontSize: 11, fontWeight: 600, letterSpacing: '0.04em',
-              color: 'var(--clr-muted)', border: '1px solid var(--clr-border)',
-              borderRadius: 6, padding: '4px 10px',
-            }}>
+            <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.04em', color: 'var(--clr-muted)', border: '1px solid var(--clr-border)', borderRadius: 6, padding: '4px 10px' }}>
               VIEW ONLY
             </span>
           ) : (
-            <button
-              className={`btn btn-sm ${isConfirmed ? 'btn-outline' : 'btn-primary'}`}
-              onClick={handleConfirm}
-              disabled={confirming || isConfirmed || exams.length === 0}
-              style={{ gap: 6, whiteSpace: 'nowrap' }}
-            >
+            <button className={`btn btn-sm ${isConfirmed ? 'btn-outline' : 'btn-primary'}`} onClick={handleConfirm} disabled={confirming || isConfirmed || exams.length === 0} style={{ gap: 6, whiteSpace: 'nowrap' }}>
               <CheckCircle size={14} />
               {confirming ? 'Confirming…' : isConfirmed ? 'Confirmed' : 'Confirm Schedule'}
             </button>
@@ -330,77 +366,116 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
         </div>
       </div>
 
-      {/* ── Calendar card ── */}
+      {/* Sticky score bar — visible when an exam is selected */}
+      {selectedExam && !isConfirmed && (
+        <div style={{ background: 'var(--clr-surface)', border: '1px solid var(--clr-border)', borderRadius: 8, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+            <span style={{ width: 10, height: 10, borderRadius: '50%', background: examColor(selectedExam.examType), flexShrink: 0 }} />
+            <span className="font-medium" style={{ fontSize: 13 }}>{selectedExam.courseCode}</span>
+            <span className="text-muted" style={{ fontSize: 12 }}>— {selectedExam.examType}</span>
+            <span className="text-muted" style={{ fontSize: 12 }}>· Currently {currentExamDateStr}</span>
+            {loadingScores && <span className="text-xs text-muted" style={{ marginLeft: 4 }}>Loading scores…</span>}
+          </div>
+          {!rescheduleMode ? (
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <button
+                className="btn btn-sm"
+                style={{ color: '#dc2626', border: '1px solid #fecaca', background: 'color-mix(in srgb, #ef4444 6%, var(--clr-card))', fontWeight: 500 }}
+                onClick={() => setConfirmDelete(selectedExam)}
+                disabled={saving}
+              >
+                Remove
+              </button>
+              <button
+                className="btn btn-primary btn-sm"
+                disabled={!dayScores || loadingScores || saving}
+                onClick={() => setRescheduleMode(true)}
+              >
+                Reschedule
+              </button>
+            </div>
+          ) : (
+            <span className="text-xs" style={{ color: 'var(--clr-primary)', fontWeight: 600 }}>
+              Click a green or amber day to reschedule
+            </span>
+          )}
+          <button className="btn btn-ghost btn-sm" onClick={clearSelection} style={{ padding: 4 }}>
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
+      {/* Calendar card */}
       <div className="card" style={{ overflow: 'hidden' }}>
         <div style={{ display: 'flex' }}>
 
-          {/* ── Left: nav + grid ── */}
+          {/* Left: nav + grid */}
           <div style={{ flex: 1, minWidth: 0 }}>
 
             {/* Nav bar */}
-            <div style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '12px 20px', borderBottom: '1px solid var(--clr-border)',
-            }}>
-              <button className="btn btn-outline btn-sm" onClick={prevPeriod} disabled={!canGoPrev} style={{ gap: 4 }}>
-                <ChevronLeft size={14} /> Prev
-              </button>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 20px', borderBottom: '1px solid var(--clr-border)' }}>
+              <button className="btn btn-outline btn-sm" onClick={prevPeriod} disabled={!canGoPrev} style={{ gap: 4 }}><ChevronLeft size={14} /> Prev</button>
               <span className="exam-cal-month">{periodLabel()}</span>
-              <button className="btn btn-outline btn-sm" onClick={nextPeriod} disabled={!canGoNext} style={{ gap: 4 }}>
-                Next <ChevronRight size={14} />
-              </button>
+              <button className="btn btn-outline btn-sm" onClick={nextPeriod} disabled={!canGoNext} style={{ gap: 4 }}>Next <ChevronRight size={14} /></button>
             </div>
+
+            {/* Score legend — only when scores are loaded */}
+            {dayScores && <ScoreLegend />}
 
             {/* Month view */}
             {viewMode === 'month' && (
               <div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: '1px solid var(--clr-border)' }}>
                   {DAYS.map(d => (
-                    <div key={d} style={{
-                      padding: '8px 0', fontSize: 11, fontWeight: 600,
-                      color: 'var(--clr-muted)', textAlign: 'center', letterSpacing: '0.04em',
-                    }}>
-                      {d}
-                    </div>
+                    <div key={d} style={{ padding: '8px 0', fontSize: 11, fontWeight: 600, color: 'var(--clr-muted)', textAlign: 'center', letterSpacing: '0.04em' }}>{d}</div>
                   ))}
                 </div>
 
                 {monthGrid.weeks.map((week, wi) => (
-                  <div key={wi} style={{
-                    display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)',
-                    borderBottom: wi < monthGrid.weeks.length - 1 ? '1px solid var(--clr-border)' : 'none',
-                  }}>
+                  <div key={wi} style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: wi < monthGrid.weeks.length - 1 ? '1px solid var(--clr-border)' : 'none' }}>
                     {week.map((day, di) => {
-                      const inMonth     = day && day.getMonth() === monthGrid.month;
-                      const isToday     = day ? toDateStr(day) === todayStr : false;
-                      const isSelected  = selectedDay && day && toDateStr(day) === toDateStr(selectedDay);
-                      const blockReason = day ? blockedDates[toDateStr(day)] : null;
-                      const dayExams    = examsOnDate(day);
-                      const dayBookings = bookingsOnDate(day);
-                      const wk          = day ? getAcademicWeek(day) : null;
+                      const inMonth       = day && day.getMonth() === monthGrid.month;
+                      const isToday       = day ? toDateStr(day) === todayStr : false;
+                      const isSelected    = selectedDay && day && toDateStr(day) === toDateStr(selectedDay);
+                      const blockReason   = day ? blockedDates[toDateStr(day)] : null;
+                      const dayExams      = examsOnDate(day);
+                      const dayBookings   = bookingsOnDate(day);
+                      const wk            = day ? getAcademicWeek(day) : null;
+                      const dateStr       = day ? toDateStr(day) : null;
+                      const isCurrentExam = dateStr === currentExamDateStr;
 
-                      // Limit chips: fill from exams first, then bookings
+                      const score = dateStr && dayScores && inMonth ? dayScores[dateStr] : undefined;
+                      const ss    = scoreStyle(score);
+
                       const visibleExams    = dayExams.slice(0, MAX_CHIPS);
                       const remaining       = MAX_CHIPS - visibleExams.length;
                       const visibleBookings = dayBookings.slice(0, remaining);
                       const overflow        = (dayExams.length + dayBookings.length) - (visibleExams.length + visibleBookings.length);
 
-                      const cellBg = isSelected
-                        ? 'color-mix(in srgb, var(--clr-primary) 6%, var(--clr-card))'
-                        : blockReason && inMonth
-                          ? 'color-mix(in srgb, #ef4444 7%, var(--clr-card))'
-                          : !inMonth ? 'var(--clr-surface)' : 'var(--clr-card)';
+                      const cellBg = !inMonth
+                        ? 'var(--clr-surface)'
+                        : ss
+                          ? ss.bg
+                          : isSelected
+                            ? 'color-mix(in srgb, var(--clr-primary) 6%, var(--clr-card))'
+                            : blockReason
+                              ? 'color-mix(in srgb, #ef4444 7%, var(--clr-card))'
+                              : 'var(--clr-card)';
+
+                      const cellOutline = ss
+                        ? `2px solid ${ss.outlineColor}`
+                        : isSelected ? '2px solid var(--clr-primary)' : 'none';
 
                       return (
                         <div
                           key={di}
-                          onClick={() => day && setSelectedDay(prev => prev && toDateStr(prev) === toDateStr(day) ? null : day)}
+                          onClick={() => handleCellClick(day)}
                           style={{
                             minHeight: 90, padding: '6px 8px',
                             borderRight: di < 6 ? '1px solid var(--clr-border)' : 'none',
                             background: cellBg,
-                            cursor: day ? 'pointer' : 'default',
-                            outline: isSelected ? '2px solid var(--clr-primary)' : 'none',
+                            cursor: !day ? 'default' : (rescheduleMode && ss?.clickable) ? 'copy' : 'pointer',
+                            outline: cellOutline,
                             outlineOffset: -2,
                             transition: 'background 0.1s',
                           }}
@@ -409,8 +484,7 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
                             <>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                                 <span style={{
-                                  width: 24, height: 24,
-                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
                                   borderRadius: '50%', fontSize: 13, lineHeight: 1,
                                   fontWeight: isToday ? 700 : 400,
                                   background: isToday ? 'var(--clr-primary)' : 'transparent',
@@ -418,24 +492,21 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
                                 }}>
                                   {day.getDate()}
                                 </span>
-                                {wk !== null && (
-                                  <span style={{ fontSize: 10, color: 'var(--clr-muted)', opacity: 0.55 }}>W{wk}</span>
-                                )}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                  {ss && <span style={{ width: 7, height: 7, borderRadius: '50%', background: ss.dot, flexShrink: 0 }} />}
+                                  {isCurrentExam && <span style={{ fontSize: 9, fontWeight: 700, color: examColor(selectedExam?.examType), letterSpacing: '0.02em' }}>NOW</span>}
+                                  {wk !== null && <span style={{ fontSize: 10, color: 'var(--clr-muted)', opacity: 0.55 }}>W{wk}</span>}
+                                </div>
                               </div>
                               {blockReason && inMonth && (
-                                <div style={{
-                                  fontSize: 10, color: '#b91c1c', fontWeight: 600,
-                                  marginBottom: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                                }}>
+                                <div style={{ fontSize: 10, color: '#b91c1c', fontWeight: 600, marginBottom: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                   {blockReason.length > 18 ? blockReason.slice(0, 16) + '…' : blockReason}
                                 </div>
                               )}
                               {visibleExams.map(exam => <ExamChip key={exam._id} exam={exam} />)}
                               {visibleBookings.map(b => <BookingChip key={b._id} booking={b} />)}
                               {overflow > 0 && (
-                                <div style={{ fontSize: 10, color: 'var(--clr-primary)', fontWeight: 600, padding: '1px 4px' }}>
-                                  +{overflow} more
-                                </div>
+                                <div style={{ fontSize: 10, color: 'var(--clr-primary)', fontWeight: 600, padding: '1px 4px' }}>+{overflow} more</div>
                               )}
                             </>
                           )}
@@ -454,20 +525,9 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
                   {weekDays.map((day, i) => {
                     const isToday = toDateStr(day) === todayStr;
                     return (
-                      <div key={i} style={{
-                        padding: '10px 0', textAlign: 'center',
-                        borderRight: i < 6 ? '1px solid var(--clr-border)' : 'none',
-                      }}>
-                        <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--clr-muted)', letterSpacing: '0.04em', marginBottom: 4 }}>
-                          {DAYS[i]}
-                        </p>
-                        <span style={{
-                          display: 'inline-flex', width: 30, height: 30,
-                          alignItems: 'center', justifyContent: 'center',
-                          borderRadius: '50%', fontSize: 14, fontWeight: isToday ? 700 : 400,
-                          background: isToday ? 'var(--clr-primary)' : 'transparent',
-                          color: isToday ? '#fff' : 'var(--clr-text)',
-                        }}>
+                      <div key={i} style={{ padding: '10px 0', textAlign: 'center', borderRight: i < 6 ? '1px solid var(--clr-border)' : 'none' }}>
+                        <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--clr-muted)', letterSpacing: '0.04em', marginBottom: 4 }}>{DAYS[i]}</p>
+                        <span style={{ display: 'inline-flex', width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: '50%', fontSize: 14, fontWeight: isToday ? 700 : 400, background: isToday ? 'var(--clr-primary)' : 'transparent', color: isToday ? '#fff' : 'var(--clr-text)' }}>
                           {day.getDate()}
                         </span>
                       </div>
@@ -476,30 +536,37 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
                   {weekDays.map((day, i) => {
-                    const isSelected  = selectedDay && toDateStr(day) === toDateStr(selectedDay);
-                    const blockReason = blockedDates[toDateStr(day)];
+                    const isSelected    = selectedDay && toDateStr(day) === toDateStr(selectedDay);
+                    const blockReason   = blockedDates[toDateStr(day)];
+                    const dateStr       = toDateStr(day);
+                    const isCurrentExam = dateStr === currentExamDateStr;
+                    const score         = dayScores ? dayScores[dateStr] : undefined;
+                    const ss            = scoreStyle(score);
+
                     return (
                       <div
                         key={i}
-                        onClick={() => setSelectedDay(prev => prev && toDateStr(prev) === toDateStr(day) ? null : day)}
+                        onClick={() => handleCellClick(day)}
                         style={{
                           minHeight: 200, padding: '8px 6px',
                           borderRight: i < 6 ? '1px solid var(--clr-border)' : 'none',
-                          cursor: 'pointer',
-                          background: isSelected
-                            ? 'color-mix(in srgb, var(--clr-primary) 6%, var(--clr-card))'
-                            : blockReason
-                              ? 'color-mix(in srgb, #ef4444 7%, var(--clr-card))'
-                              : 'var(--clr-card)',
-                          outline: isSelected ? '2px solid var(--clr-primary)' : 'none',
+                          cursor: (rescheduleMode && ss?.clickable) ? 'copy' : 'pointer',
+                          background: ss
+                            ? ss.bg
+                            : isSelected
+                              ? 'color-mix(in srgb, var(--clr-primary) 6%, var(--clr-card))'
+                              : blockReason
+                                ? 'color-mix(in srgb, #ef4444 7%, var(--clr-card))'
+                                : 'var(--clr-card)',
+                          outline: ss ? `2px solid ${ss.outlineColor}` : isSelected ? '2px solid var(--clr-primary)' : 'none',
                           outlineOffset: -2,
+                          transition: 'background 0.1s',
                         }}
                       >
+                        {ss && <span style={{ display: 'block', width: 7, height: 7, borderRadius: '50%', background: ss.dot, marginBottom: 4 }} />}
+                        {isCurrentExam && <div style={{ fontSize: 9, fontWeight: 700, color: examColor(selectedExam?.examType), marginBottom: 2 }}>CURRENT</div>}
                         {blockReason && (
-                          <div style={{
-                            fontSize: 10, color: '#b91c1c', fontWeight: 600,
-                            marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                          }}>
+                          <div style={{ fontSize: 10, color: '#b91c1c', fontWeight: 600, marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {blockReason.length > 22 ? blockReason.slice(0, 20) + '…' : blockReason}
                           </div>
                         )}
@@ -513,46 +580,19 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
             )}
           </div>
 
-          {/* ── Right: day detail panel ── */}
-          {selectedDay && (
-            <div style={{
-              width: 256, flexShrink: 0,
-              borderLeft: '1px solid var(--clr-border)',
-              display: 'flex', flexDirection: 'column',
-            }}>
-              {/* Panel header */}
-              <div style={{
-                padding: '14px 16px', borderBottom: '1px solid var(--clr-border)',
-                display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
-              }}>
+          {/* Right: day detail panel — hidden during reschedule mode */}
+          {selectedDay && !rescheduleMode && (
+            <div style={{ width: 256, flexShrink: 0, borderLeft: '1px solid var(--clr-border)', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--clr-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div>
-                  <p className="font-medium" style={{ fontSize: 14 }}>
-                    {selectedDay.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
-                  </p>
-                  {getAcademicWeek(selectedDay) && (
-                    <p className="text-xs text-muted" style={{ marginTop: 2 }}>
-                      Week {getAcademicWeek(selectedDay)} of semester
-                    </p>
-                  )}
+                  <p className="font-medium" style={{ fontSize: 14 }}>{selectedDay.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</p>
+                  {getAcademicWeek(selectedDay) && <p className="text-xs text-muted" style={{ marginTop: 2 }}>Week {getAcademicWeek(selectedDay)} of semester</p>}
                 </div>
-                <button
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => setSelectedDay(null)}
-                  style={{ padding: 4, marginLeft: 8, flexShrink: 0 }}
-                >
-                  <X size={14} />
-                </button>
+                <button className="btn btn-ghost btn-sm" onClick={() => setSelectedDay(null)} style={{ padding: 4, marginLeft: 8, flexShrink: 0 }}><X size={14} /></button>
               </div>
-
-              {/* Panel body */}
               <div style={{ flex: 1, padding: '12px 14px', overflowY: 'auto' }}>
                 {blockedDates[toDateStr(selectedDay)] && (
-                  <div style={{
-                    background: 'color-mix(in srgb, #ef4444 10%, var(--clr-card))',
-                    border: '1px solid #fca5a5',
-                    borderRadius: 6, padding: '8px 12px', marginBottom: 10,
-                    fontSize: 12, color: '#b91c1c', fontWeight: 500,
-                  }}>
+                  <div style={{ background: 'color-mix(in srgb, #ef4444 10%, var(--clr-card))', border: '1px solid #fca5a5', borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 12, color: '#b91c1c', fontWeight: 500 }}>
                     {blockedDates[toDateStr(selectedDay)]}
                   </div>
                 )}
@@ -570,7 +610,6 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
               </div>
             </div>
           )}
-
         </div>
       </div>
 
@@ -580,43 +619,36 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
         </p>
       )}
 
-      {/* ── Edit modal ── */}
-      {editExam && (
-        <div
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}
-          onClick={closeEdit}
-        >
-          <div
-            style={{ background: 'var(--clr-card)', borderRadius: 12, padding: 24, width: 340, boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}
-            onClick={e => e.stopPropagation()}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-              <div>
-                <h3 className="font-medium" style={{ marginBottom: 2 }}>Edit Exam</h3>
-                <p className="text-xs text-muted">{editExam.courseCode} — {editExam.examType}</p>
-              </div>
-              <button className="btn btn-ghost btn-sm" onClick={closeEdit} style={{ padding: 4 }}><X size={14} /></button>
+      {/* Reschedule confirm dialog */}
+      {rescheduleConfirm && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={() => setRescheduleConfirm(null)}>
+          <div style={{ background: 'var(--clr-card)', borderRadius: 12, padding: 24, width: 320, boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }} onClick={e => e.stopPropagation()}>
+            <h3 className="font-medium" style={{ marginBottom: 6 }}>Confirm Reschedule</h3>
+            <p className="text-sm text-muted" style={{ marginBottom: 16 }}>
+              Move <strong>{selectedExam?.courseCode}</strong> ({selectedExam?.examType}) to{' '}
+              <strong>{rescheduleConfirm.date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</strong>?
+            </p>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="btn btn-outline btn-sm" onClick={() => setRescheduleConfirm(null)} disabled={saving}>Cancel</button>
+              <button className="btn btn-primary btn-sm" onClick={handleConfirmReschedule} disabled={saving}>{saving ? 'Saving…' : 'Confirm'}</button>
             </div>
+          </div>
+        </div>
+      )}
 
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs text-muted" style={{ display: 'block', marginBottom: 4 }}>Exam Date</label>
-                <input type="date" className="form-input" value={editDate} onChange={e => setEditDate(e.target.value)} style={{ height: 36, fontSize: 13 }} />
-              </div>
-              <div>
-                <label className="text-xs text-muted" style={{ display: 'block', marginBottom: 4 }}>Room (optional)</label>
-                <input type="text" className="form-input" placeholder="e.g. 24-133" value={editRoom} onChange={e => setEditRoom(e.target.value)} style={{ height: 36, fontSize: 13 }} />
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: 8, marginTop: 20, justifyContent: 'space-between' }}>
-              <button className="btn btn-sm" onClick={handleDelete} disabled={saving} style={{ color: '#dc2626', border: '1px solid #fecaca', background: '#fff1f2', fontWeight: 500 }}>
-                Remove
+      {/* Delete confirm dialog */}
+      {confirmDelete && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={() => setConfirmDelete(null)}>
+          <div style={{ background: 'var(--clr-card)', borderRadius: 12, padding: 24, width: 320, boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }} onClick={e => e.stopPropagation()}>
+            <h3 className="font-medium" style={{ marginBottom: 6 }}>Remove Exam</h3>
+            <p className="text-sm text-muted" style={{ marginBottom: 16 }}>
+              Remove <strong>{confirmDelete.courseCode}</strong> ({confirmDelete.examType}) from the schedule? This cannot be undone.
+            </p>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="btn btn-outline btn-sm" onClick={() => setConfirmDelete(null)} disabled={saving}>Cancel</button>
+              <button className="btn btn-sm" style={{ color: '#fff', background: '#dc2626', border: 'none', fontWeight: 500 }} onClick={handleConfirmDelete} disabled={saving}>
+                {saving ? 'Removing…' : 'Remove'}
               </button>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn btn-outline btn-sm" onClick={closeEdit} disabled={saving}>Cancel</button>
-                <button className="btn btn-primary btn-sm" onClick={handleSaveEdit} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
-              </div>
             </div>
           </div>
         </div>

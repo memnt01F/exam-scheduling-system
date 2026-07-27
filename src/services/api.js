@@ -354,6 +354,11 @@ export async function getScheduleJob(jobId) {
   return request(`/schedule/jobs/${jobId}`);
 }
 
+export async function getDayScores({ courseCode, examType, termName }) {
+  const qs = new URLSearchParams({ courseCode, examType, termName }).toString();
+  return request(`/schedule/day-scores?${qs}`);
+}
+
 /**
  * Probe whether the backend is reachable. Used so the UI can fall back
  * to local mock data when running in the hosted preview (no backend).
