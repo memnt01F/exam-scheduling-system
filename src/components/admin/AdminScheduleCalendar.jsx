@@ -93,7 +93,8 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
 
   const isConfirmed  = readOnly || (exams.length > 0 && exams.every(e => e.confirmedAt));
   const todayStr     = toDateStr(new Date());
-  const blockedDates = useMemo(() => term?.calendarData?.blockedDates || {}, [term]);
+  const blockedDates     = useMemo(() => term?.calendarData?.blockedDates     || {}, [term]);
+  const softBlockedDates = useMemo(() => term?.calendarData?.softBlockedDates || {}, [term]);
 
   const getAcademicWeek = (date) => {
     if (!termStartLocal || !date) return null;
@@ -459,7 +460,8 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
                       const inMonth       = day && day.getMonth() === monthGrid.month;
                       const isToday       = day ? toDateStr(day) === todayStr : false;
                       const isSelected    = selectedDay && day && toDateStr(day) === toDateStr(selectedDay);
-                      const blockReason   = day ? blockedDates[toDateStr(day)] : null;
+                      const blockReason   = day ? blockedDates[toDateStr(day)]     : null;
+                      const softReason    = day ? softBlockedDates[toDateStr(day)] : null;
                       const dayExams      = examsOnDate(day);
                       const dayBookings   = bookingsOnDate(day);
                       const wk            = day ? getAcademicWeek(day) : null;
@@ -482,7 +484,9 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
                             ? 'color-mix(in srgb, var(--clr-primary) 6%, var(--clr-card))'
                             : blockReason
                               ? 'color-mix(in srgb, #ef4444 7%, var(--clr-card))'
-                              : 'var(--clr-card)';
+                              : softReason
+                                ? 'color-mix(in srgb, #f59e0b 6%, var(--clr-card))'
+                                : 'var(--clr-card)';
 
                       const cellOutline = ss
                         ? ss.outline
@@ -525,6 +529,11 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
                                   {blockReason.length > 18 ? blockReason.slice(0, 16) + '…' : blockReason}
                                 </div>
                               )}
+                              {softReason && inMonth && (
+                                <div style={{ fontSize: 10, color: '#b45309', fontWeight: 600, marginBottom: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {softReason.length > 18 ? softReason.slice(0, 16) + '…' : softReason}
+                                </div>
+                              )}
                               {visibleExams.map(exam => <ExamChip key={exam._id} exam={exam} />)}
                               {visibleBookings.map(b => <BookingChip key={b._id} booking={b} />)}
                               {overflow > 0 && (
@@ -560,6 +569,7 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
                   {weekDays.map((day, i) => {
                     const isSelected    = selectedDay && toDateStr(day) === toDateStr(selectedDay);
                     const blockReason   = blockedDates[toDateStr(day)];
+                    const softReason    = softBlockedDates[toDateStr(day)];
                     const dateStr       = toDateStr(day);
                     const isCurrentExam = dateStr === currentExamDateStr;
                     const score         = dayScores ? dayScores[dateStr] : undefined;
@@ -579,7 +589,9 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
                               ? 'color-mix(in srgb, var(--clr-primary) 6%, var(--clr-card))'
                               : blockReason
                                 ? 'color-mix(in srgb, #ef4444 7%, var(--clr-card))'
-                                : 'var(--clr-card)',
+                                : softReason
+                                  ? 'color-mix(in srgb, #f59e0b 6%, var(--clr-card))'
+                                  : 'var(--clr-card)',
                           outline: ss ? ss.outline : isSelected ? '2px solid var(--clr-primary)' : 'none',
                           outlineOffset: -2,
                           transition: 'background 0.1s',
@@ -590,6 +602,11 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
                         {blockReason && (
                           <div style={{ fontSize: 10, color: '#b91c1c', fontWeight: 600, marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {blockReason.length > 22 ? blockReason.slice(0, 20) + '…' : blockReason}
+                          </div>
+                        )}
+                        {softReason && (
+                          <div style={{ fontSize: 10, color: '#b45309', fontWeight: 600, marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {softReason.length > 22 ? softReason.slice(0, 20) + '…' : softReason}
                           </div>
                         )}
                         {examsOnDate(day).map(exam => <ExamChip key={exam._id} exam={exam} />)}
@@ -616,6 +633,11 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
                 {blockedDates[toDateStr(selectedDay)] && (
                   <div style={{ background: 'color-mix(in srgb, #ef4444 10%, var(--clr-card))', border: '1px solid #fca5a5', borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 12, color: '#b91c1c', fontWeight: 500 }}>
                     {blockedDates[toDateStr(selectedDay)]}
+                  </div>
+                )}
+                {softBlockedDates[toDateStr(selectedDay)] && (
+                  <div style={{ background: 'color-mix(in srgb, #f59e0b 10%, var(--clr-card))', border: '1px solid #fcd34d', borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 12, color: '#b45309', fontWeight: 500 }}>
+                    B54 Unavailable — {softBlockedDates[toDateStr(selectedDay)]}
                   </div>
                 )}
                 {selectedDayExams.length === 0 && selectedDayBookings.length === 0 ? (
