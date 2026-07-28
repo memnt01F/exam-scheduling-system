@@ -84,6 +84,7 @@ const BookingPage = () => {
   const [pendingExamType, setPendingExamType] = useState(null);
   const [conflictMessage, setConflictMessage] = useState(null);
   const [checkingConflict, setCheckingConflict] = useState(false);
+  const [topDays, setTopDays] = useState([]);
 
   if (!course) {
     return (
@@ -305,6 +306,8 @@ const BookingPage = () => {
               bookingExamType={examType}
               bookingCurrentDate={initialDate}
               onDaySelected={handleSelectDate}
+              onScoresReady={setTopDays}
+              selectedDateOverride={selectedDate}
             />
           </div>
 
@@ -416,6 +419,61 @@ const BookingPage = () => {
                 </button>
               </div>
             </div>
+
+            {/* Top Recommended Days */}
+            {topDays.length > 0 && (
+              <div className="card">
+                <div className="card-header">
+                  <div className="card-title">Top Recommended Days</div>
+                </div>
+                <div className="card-content" style={{ padding: '0 0 12px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '0 16px' }}>
+                    {topDays.map(({ dateStr, score, courses }, idx) => {
+                      const hue   = Math.round(score * 120);
+                      const l     = Math.round(62 - score * 26);
+                      const color = `hsl(${hue},72%,${l}%)`;
+                      const label = score >= 0.7 ? 'Best' : score >= 0.4 ? 'Good' : 'Acceptable';
+                      const day   = new Date(dateStr + 'T00:00:00');
+                      const isActive = dateStr === selectedDate;
+                      return (
+                        <div
+                          key={dateStr}
+                          onClick={() => handleSelectDate(dateStr, null)}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 10,
+                            padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
+                            border: isActive ? `2px solid var(--clr-primary)` : '1px solid var(--clr-border)',
+                            background: isActive ? 'color-mix(in srgb, var(--clr-primary) 8%, var(--clr-card))' : 'var(--clr-card)',
+                            transition: 'background 0.1s',
+                          }}
+                        >
+                          <span style={{ width: 22, height: 22, borderRadius: '50%', background: color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                            {idx + 1}
+                          </span>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'baseline', gap: 4 }}>
+                              <span>{day.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                              <span style={{ color: 'var(--clr-muted)', fontWeight: 400, fontSize: 11 }}>
+                                {day.toLocaleDateString('en-US', { weekday: 'short' })}
+                              </span>
+                              <span style={{ fontSize: 10, fontWeight: 500, padding: '1px 5px', borderRadius: 4, background: `hsla(${hue},72%,${l}%,0.15)`, color }}>
+                                {label}
+                              </span>
+                            </div>
+                            {courses?.length > 0 && (
+                              <div style={{ fontSize: 10, color: 'var(--clr-muted)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {courses.join(', ')}
+                              </div>
+                            )}
+                          </div>
+                          <span style={{ fontSize: 12, fontWeight: 700, color, flexShrink: 0 }}>{score.toFixed(2)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

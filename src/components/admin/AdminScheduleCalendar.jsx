@@ -50,6 +50,74 @@ const scoreStyle = (score) => {
   return { bg, outline, dot, clickable: true };
 };
 
+const scoreDotColor = (score) => {
+  const hue = Math.round(score * 120);
+  const l   = Math.round(62 - score * 26);
+  return `hsl(${hue},72%,${l}%)`;
+};
+
+const scoreQualityLabel = (s) => s >= 0.7 ? 'Best' : s >= 0.4 ? 'Good' : 'Acceptable';
+
+const TopDaysPanel = ({ dayScores, examsOnDate, bookingsOnDate }) => {
+  const top = useMemo(() => {
+    if (!dayScores) return [];
+    return Object.entries(dayScores)
+      .filter(([, s]) => s >= 0)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 5);
+  }, [dayScores]);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--clr-border)' }}>
+        <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--clr-muted)' }}>
+          Top Recommended Days
+        </p>
+      </div>
+      <div style={{ flex: 1, padding: '12px 14px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {top.length === 0 ? (
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <p style={{ fontSize: 12, color: 'var(--clr-muted)' }}>No recommended days found</p>
+          </div>
+        ) : top.map(([dateStr, score], idx) => {
+          const day = new Date(dateStr + 'T00:00:00');
+          const courses = [
+            ...(examsOnDate ? examsOnDate(day) : []).map(e => e.courseCode),
+            ...(bookingsOnDate ? bookingsOnDate(day) : []).map(b => b.courseCode),
+          ].filter(Boolean);
+          const color = scoreDotColor(score);
+          return (
+            <div key={dateStr} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--clr-border)', background: 'var(--clr-card)' }}>
+              <span style={{ width: 22, height: 22, borderRadius: '50%', background: color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                {idx + 1}
+              </span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'baseline', gap: 4 }}>
+                  <span>{day.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                  <span style={{ color: 'var(--clr-muted)', fontWeight: 400, fontSize: 11 }}>
+                    {day.toLocaleDateString('en-US', { weekday: 'short' })}
+                  </span>
+                  <span style={{ fontSize: 10, fontWeight: 500, padding: '1px 5px', borderRadius: 4, background: `hsla(${Math.round(score * 120)},72%,${Math.round(62 - score * 26)}%,0.15)`, color }}>
+                    {scoreQualityLabel(score)}
+                  </span>
+                </div>
+                {courses.length > 0 && (
+                  <div style={{ fontSize: 10, color: 'var(--clr-muted)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {courses.join(', ')}
+                  </div>
+                )}
+              </div>
+              <span style={{ fontSize: 13, fontWeight: 700, color, flexShrink: 0 }}>
+                {score.toFixed(2)}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
 const AdminScheduleCalendar = ({
   exams: initialExams,
   termId,
@@ -63,6 +131,8 @@ const AdminScheduleCalendar = ({
   bookingExamType = null,    // 'Major 1' | 'Major 2' | 'Mid' — controlled by parent
   bookingCurrentDate = null, // existing booking date string (for NOW indicator on reschedule)
   onDaySelected = null,      // (dateStr) => void — called when a day is clicked in booking mode
+  onScoresReady = null,      // ([{ dateStr, score, courses }]) => void — parent receives top days
+  selectedDateOverride = null, // dateStr — lets parent push a visual selection into booking mode
 }) => {
   const [exams, setExams]           = useState(initialExams || []);
   const [viewMode, setViewMode]     = useState('month');
@@ -193,6 +263,20 @@ const AdminScheduleCalendar = ({
       .catch(() => setDayScores({})) // scoring unavailable — allow all non-blocked days
       .finally(() => setLoadingScores(false));
   }, [bookingMode, bookingCourse?.code, bookingExamType, term?.name]);
+
+  // Push top recommended days to parent when scores or bookings update (booking mode only)
+  useEffect(() => {
+    if (!bookingMode || !dayScores || !onScoresReady) return;
+    const top = Object.entries(dayScores)
+      .filter(([, s]) => s >= 0)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 5)
+      .map(([dateStr, score]) => ({
+        dateStr, score,
+        courses: bookings.filter(b => toDateStr(new Date(b.examDate)) === dateStr).map(b => b.courseCode),
+      }));
+    onScoresReady(top);
+  }, [bookingMode, dayScores, bookings]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleChipClick = async (e, exam) => {
     e.stopPropagation();
@@ -552,7 +636,11 @@ const AdminScheduleCalendar = ({
                     {week.map((day, di) => {
                       const inMonth       = day && day.getMonth() === monthGrid.month;
                       const isToday       = day ? toDateStr(day) === todayStr : false;
-                      const isSelected    = selectedDay && day && toDateStr(day) === toDateStr(selectedDay);
+                      const isSelected    = day && (
+                        bookingMode && selectedDateOverride
+                          ? toDateStr(day) === selectedDateOverride
+                          : selectedDay && toDateStr(day) === toDateStr(selectedDay)
+                      );
                       const blockReason   = day ? blockedDates[toDateStr(day)]     : null;
                       const softReason    = day ? softBlockedDates[toDateStr(day)] : null;
                       const dayExams      = examsOnDate(day);
@@ -665,7 +753,9 @@ const AdminScheduleCalendar = ({
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
                   {weekDays.map((day, i) => {
-                    const isSelected    = selectedDay && toDateStr(day) === toDateStr(selectedDay);
+                    const isSelected    = bookingMode && selectedDateOverride
+                      ? toDateStr(day) === selectedDateOverride
+                      : selectedDay && toDateStr(day) === toDateStr(selectedDay);
                     const blockReason   = blockedDates[toDateStr(day)];
                     const softReason    = softBlockedDates[toDateStr(day)];
                     const dateStr       = toDateStr(day);
@@ -723,6 +813,13 @@ const AdminScheduleCalendar = ({
               </div>
             )}
           </div>
+
+          {/* Right: top recommended days — shown when exam selected + scores loaded, no day panel open */}
+          {dayScores && !selectedDay && !rescheduleMode && !bookingMode && selectedExam && (
+            <div style={{ width: 256, flexShrink: 0, borderLeft: '1px solid var(--clr-border)', display: 'flex', flexDirection: 'column' }}>
+              <TopDaysPanel dayScores={dayScores} examsOnDate={examsOnDate} bookingsOnDate={bookingsOnDate} />
+            </div>
+          )}
 
           {/* Right: day detail panel — hidden during reschedule mode */}
           {selectedDay && !rescheduleMode && !bookingMode && (
