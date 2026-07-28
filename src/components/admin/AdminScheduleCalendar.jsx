@@ -40,10 +40,14 @@ const getWeekStart = (date) => {
 // Maps a score to visual style. Returns null when score is undefined (day outside window).
 const scoreStyle = (score) => {
   if (score === undefined) return null;
-  if (score < 0)   return { bg: 'rgba(107,114,128,0.13)', outline: 'none',                           dot: '#6b7280', clickable: false };
-  if (score < 0.4) return { bg: 'rgba(239,68,68,0.17)',   outline: '2px solid rgba(239,68,68,0.26)', dot: '#ef4444', clickable: true  };
-  if (score < 0.7) return { bg: 'rgba(245,158,11,0.17)',  outline: '2px solid rgba(245,158,11,0.28)', dot: '#f59e0b', clickable: true  };
-  return             { bg: 'rgba(22,163,74,0.17)',   outline: '2px solid rgba(22,163,74,0.28)',  dot: '#16a34a', clickable: true  };
+  if (score < 0) return { bg: 'rgba(209,0,31,0.12)', outline: '2px solid rgba(209,0,31,0.22)', dot: '#d1001f', clickable: false };
+  // Continuous: hue 0° (red) → 120° (green), lightness 62% → 36% (darkens toward best)
+  const hue  = Math.round(score * 120);
+  const l    = Math.round(62 - score * 26);
+  const dot     = `hsl(${hue},72%,${l}%)`;
+  const bg      = `hsla(${hue},72%,${l + 20}%,0.18)`;
+  const outline = `2px solid hsla(${hue},72%,${l}%,0.28)`;
+  return { bg, outline, dot, clickable: true };
 };
 
 const AdminScheduleCalendar = ({
@@ -219,8 +223,9 @@ const AdminScheduleCalendar = ({
     if (bookingMode) {
       const dateStr = toDateStr(day);
       if (blockedDates[dateStr]) return;
-      // When scores are loaded, only allow days with a defined non-negative score
-      if (dayScores) {
+      // When scores are loaded, only block days with no score or negative score,
+      // UNLESS the day is soft-blocked (B54 unavailable) — Phase 2 can still book there.
+      if (dayScores && !softBlockedDates[dateStr]) {
         const score = dayScores[dateStr];
         if (score === undefined || score < 0) return;
       }
@@ -348,30 +353,57 @@ const AdminScheduleCalendar = ({
   const currentExamDateStr  = bookingMode ? bookingCurrentDate : (selectedExam ? toDateStr(selectedExam.examDate) : null);
 
   const ScoreLegend = () => {
-    const [tip, setTip] = useState(null); // { text, x, y }
-    const items = [
-      { dot: '#6b7280', label: 'Unavailable', tip: 'Cannot be scheduled — a student in this course has another exam on this day, or the day is a vacation/blocked date.' },
-      { dot: '#ef4444', label: 'Poor',        tip: 'Feasible but not ideal — many shared-student pairs clash nearby or timing is unfavourable.' },
-      { dot: '#f59e0b', label: 'Acceptable',  tip: 'Workable option — some concerns but no hard conflicts.' },
-      { dot: '#16a34a', label: 'Good',        tip: 'Best available days — minimal student conflicts and preferred timing.' },
-    ];
+    const [tip, setTip] = useState(null);
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '6px 20px', borderBottom: '1px solid var(--clr-border)', fontSize: 11, color: 'var(--clr-muted)', flexWrap: 'wrap', position: 'relative' }}>
         <span style={{ fontWeight: 500 }}>Score:</span>
-        {items.map(({ dot, label, tip: text }) => (
-          <span
-            key={label}
-            onMouseEnter={e => { const r = e.currentTarget.getBoundingClientRect(); setTip({ text, x: r.left, y: r.bottom }); }}
-            onMouseLeave={() => setTip(null)}
-            style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'default' }}
-          >
-            <span style={{ width: 8, height: 8, borderRadius: '50%', background: dot, flexShrink: 0, display: 'inline-block' }} />
-            {label}
-          </span>
-        ))}
+        {/* Conflict dot */}
+        <span
+          onMouseEnter={e => { const r = e.currentTarget.getBoundingClientRect(); setTip({ text: 'Cannot be scheduled — a student in this course has another exam on this day.', x: r.left, y: r.bottom }); }}
+          onMouseLeave={() => setTip(null)}
+          style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'default' }}
+        >
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#d1001f', flexShrink: 0, display: 'inline-block' }} />
+          Conflict
+        </span>
+        {/* Blocked dot */}
+        <span
+          onMouseEnter={e => { const r = e.currentTarget.getBoundingClientRect(); setTip({ text: 'Hard blocked — vacation or holiday. No exam can be scheduled here.', x: r.left, y: r.bottom }); }}
+          onMouseLeave={() => setTip(null)}
+          style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'default' }}
+        >
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#374151', flexShrink: 0, display: 'inline-block' }} />
+          Blocked
+        </span>
+        {/* B54 Unavailable dot */}
+        <span
+          onMouseEnter={e => { const r = e.currentTarget.getBoundingClientRect(); setTip({ text: 'B54 Unavailable — Building 54 is not available. Phase 0 exams cannot be scheduled here; Phase 1 and 2 are unaffected.', x: r.left, y: r.bottom }); }}
+          onMouseLeave={() => setTip(null)}
+          style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'default' }}
+        >
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#9ca3af', flexShrink: 0, display: 'inline-block' }} />
+          B54 Unavailable
+        </span>
+        {/* Continuous gradient bar */}
+        <span
+          onMouseEnter={e => { const r = e.currentTarget.getBoundingClientRect(); setTip({ text: 'Continuous score: left = poor (few options, many conflicts), right = best available days.', x: r.left, y: r.bottom }); }}
+          onMouseLeave={() => setTip(null)}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'default' }}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <span style={{
+              width: 100, height: 8, borderRadius: 4,
+              background: 'linear-gradient(to right, hsl(0,72%,62%), hsl(60,72%,49%), hsl(120,72%,36%))',
+              display: 'block',
+            }} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', width: 100, fontSize: 9, color: 'var(--clr-muted)' }}>
+              <span>0.0</span><span>0.4</span><span>0.7</span><span>1.0</span>
+            </div>
+          </div>
+        </span>
         {bookingMode && (
           <span style={{ marginLeft: 'auto', color: 'var(--clr-primary)', fontWeight: 600 }}>
-            Click a green or amber day to book
+            Click a scored day to book
           </span>
         )}
         {!bookingMode && rescheduleMode && (
@@ -546,9 +578,9 @@ const AdminScheduleCalendar = ({
                             : isSelected
                               ? 'color-mix(in srgb, var(--clr-primary) 6%, var(--clr-card))'
                               : blockReason
-                                ? 'color-mix(in srgb, #ef4444 7%, var(--clr-card))'
+                                ? 'color-mix(in srgb, #374151 10%, var(--clr-card))'
                                 : softReason
-                                  ? 'color-mix(in srgb, #f59e0b 6%, var(--clr-card))'
+                                  ? 'color-mix(in srgb, #d1d5db 18%, var(--clr-card))'
                                   : 'var(--clr-card)';
 
                       const cellOutline = bookingMode && isSelected
@@ -563,7 +595,7 @@ const AdminScheduleCalendar = ({
                             minHeight: 90, padding: '6px 8px',
                             borderRight: di < 6 ? '1px solid var(--clr-border)' : 'none',
                             background: cellBg,
-                            cursor: !day ? 'default' : (rescheduleMode && ss?.clickable) ? 'copy' : (bookingMode && dayScores && (dayScores[toDateStr(day)] === undefined || dayScores[toDateStr(day)] < 0)) ? 'default' : 'pointer',
+                            cursor: !day ? 'default' : (rescheduleMode && ss?.clickable) ? 'copy' : (bookingMode && dayScores && !softBlockedDates[toDateStr(day)] && (dayScores[toDateStr(day)] === undefined || dayScores[toDateStr(day)] < 0)) ? 'default' : 'pointer',
                             outline: cellOutline,
                             outlineOffset: -2,
                             transition: 'background 0.1s',
@@ -591,12 +623,12 @@ const AdminScheduleCalendar = ({
                                 </div>
                               </div>
                               {blockReason && inMonth && (
-                                <div style={{ fontSize: 10, color: '#b91c1c', fontWeight: 600, marginBottom: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                <div style={{ fontSize: 10, color: '#374151', fontWeight: 600, marginBottom: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                   {blockReason.length > 18 ? blockReason.slice(0, 16) + '…' : blockReason}
                                 </div>
                               )}
                               {softReason && inMonth && (
-                                <div style={{ fontSize: 10, color: '#b45309', fontWeight: 600, marginBottom: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                <div style={{ fontSize: 10, color: '#6b7280', fontWeight: 600, marginBottom: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                   {softReason.length > 18 ? softReason.slice(0, 16) + '…' : softReason}
                                 </div>
                               )}
@@ -656,9 +688,9 @@ const AdminScheduleCalendar = ({
                               : isSelected
                                 ? 'color-mix(in srgb, var(--clr-primary) 6%, var(--clr-card))'
                                 : blockReason
-                                  ? 'color-mix(in srgb, #ef4444 7%, var(--clr-card))'
+                                  ? 'color-mix(in srgb, #374151 10%, var(--clr-card))'
                                   : softReason
-                                    ? 'color-mix(in srgb, #f59e0b 6%, var(--clr-card))'
+                                    ? 'color-mix(in srgb, #d1d5db 18%, var(--clr-card))'
                                     : 'var(--clr-card)',
                           outline: bookingMode && isSelected
                             ? '3px solid var(--clr-primary)'
@@ -673,12 +705,12 @@ const AdminScheduleCalendar = ({
                         }
                         {isCurrentExam && <div style={{ fontSize: 9, fontWeight: 700, color: examColor(selectedExam?.examType), marginBottom: 2 }}>CURRENT</div>}
                         {blockReason && (
-                          <div style={{ fontSize: 10, color: '#b91c1c', fontWeight: 600, marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <div style={{ fontSize: 10, color: '#374151', fontWeight: 600, marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {blockReason.length > 22 ? blockReason.slice(0, 20) + '…' : blockReason}
                           </div>
                         )}
                         {softReason && (
-                          <div style={{ fontSize: 10, color: '#b45309', fontWeight: 600, marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <div style={{ fontSize: 10, color: '#6b7280', fontWeight: 600, marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {softReason.length > 22 ? softReason.slice(0, 20) + '…' : softReason}
                           </div>
                         )}
@@ -704,12 +736,12 @@ const AdminScheduleCalendar = ({
               </div>
               <div style={{ flex: 1, padding: '12px 14px', overflowY: 'auto' }}>
                 {blockedDates[toDateStr(selectedDay)] && (
-                  <div style={{ background: 'color-mix(in srgb, #ef4444 10%, var(--clr-card))', border: '1px solid #fca5a5', borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 12, color: '#b91c1c', fontWeight: 500 }}>
+                  <div style={{ background: 'color-mix(in srgb, #374151 10%, var(--clr-card))', border: '1px solid #9ca3af', borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 12, color: '#374151', fontWeight: 500 }}>
                     {blockedDates[toDateStr(selectedDay)]}
                   </div>
                 )}
                 {softBlockedDates[toDateStr(selectedDay)] && (
-                  <div style={{ background: 'color-mix(in srgb, #f59e0b 10%, var(--clr-card))', border: '1px solid #fcd34d', borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 12, color: '#b45309', fontWeight: 500 }}>
+                  <div style={{ background: 'color-mix(in srgb, #d1d5db 20%, var(--clr-card))', border: '1px solid #d1d5db', borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 12, color: '#6b7280', fontWeight: 500 }}>
                     B54 Unavailable — {softBlockedDates[toDateStr(selectedDay)]}
                   </div>
                 )}
