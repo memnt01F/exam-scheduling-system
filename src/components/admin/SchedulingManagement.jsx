@@ -67,7 +67,7 @@ const SchedulingManagement = ({ restrictedDepts }) => {
   const { phases, academicTerms: terms, courses, users } = useCourses();
 
   const [selectedPhaseNum, setSelectedPhaseNum] = useState(0);
-  const [selectedTermId, setSelectedTermId]     = useState('');
+  const [selectedTermId, setSelectedTermId]     = useState(() => localStorage.getItem('schedulingTermId') || '');
   const [preferences, setPreferences]           = useState([]);
   const [loadingPrefs, setLoadingPrefs]         = useState(false);
 
@@ -89,7 +89,9 @@ const SchedulingManagement = ({ restrictedDepts }) => {
   useEffect(() => {
     if (!selectedTermId && terms.length > 0) {
       const last = terms[terms.length - 1];
-      setSelectedTermId(last._serverId || last.id);
+      const id = last._serverId || last.id;
+      localStorage.setItem('schedulingTermId', id);
+      setSelectedTermId(id);
     }
   }, [terms]);
 
@@ -306,7 +308,7 @@ const SchedulingManagement = ({ restrictedDepts }) => {
           <select
             className="form-input"
             value={selectedTermId}
-            onChange={e => setSelectedTermId(e.target.value)}
+            onChange={e => { localStorage.setItem('schedulingTermId', e.target.value); setSelectedTermId(e.target.value); }}
             style={{ width: 'auto', minWidth: 170, height: 34, fontSize: 13 }}
           >
             <option value="">Select term…</option>

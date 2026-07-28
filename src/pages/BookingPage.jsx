@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout.jsx';
-import ExamCalendar from '../components/ExamCalendar.jsx';
+import AdminScheduleCalendar from '../components/admin/AdminScheduleCalendar.jsx';
 import { useCourses } from '../context/CoursesContext.jsx';
 import { getRequiredExamTypes, EXAM_TYPES } from '../lib/mock-data.js';
 import { checkBookingConflict, createBooking, updateBooking } from '../services/api.js';
@@ -137,9 +137,9 @@ const BookingPage = () => {
   };
 
   const handleSelectDate = async (dateStr, weekDay) => {
-    if (!weekDay) return;
+    if (!dateStr) return;
     setSelectedDate(dateStr);
-    setSelectedWeekDay(weekDay);
+    setSelectedWeekDay(weekDay || null);
     setConflictMessage(null);
 
     // Live conflict check against backend (FR-CC3) — runs the moment a slot is picked.
@@ -166,7 +166,7 @@ const BookingPage = () => {
   };
 
   const handleSubmit = () => {
-    if (!selectedWeekDay || !examType) return;
+    if (!selectedDate || !examType) return;
     if (!maleProctors || !femaleProctors) {
       toast.error('Please provide both male and female proctor counts.');
       return;
@@ -294,13 +294,17 @@ const BookingPage = () => {
         )}
 
         <div className="booking-layout">
-          <div>
-            <ExamCalendar
-              examSlots={examSlots}
-              selectedDate={selectedDate}
-              onSelectDate={handleSelectDate}
-              courseCode={course.code}
-              termCalendarOverride={targetTermCalendar}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <AdminScheduleCalendar
+              exams={[]}
+              termId={termIdParam}
+              phaseNumber={2}
+              term={termIdParam ? academicTerms.find(t => (t._serverId || t.id) === termIdParam) : null}
+              bookingMode
+              bookingCourse={course}
+              bookingExamType={examType}
+              bookingCurrentDate={initialDate}
+              onDaySelected={handleSelectDate}
             />
           </div>
 
@@ -404,7 +408,7 @@ const BookingPage = () => {
                 </div>
                 <button
                   className="btn btn-primary btn-block mt-4"
-                  disabled={!selectedWeekDay || !examType || !maleProctors || !femaleProctors || !!conflictMessage || checkingConflict}
+                  disabled={!selectedDate || !examType || !maleProctors || !femaleProctors || !!conflictMessage || checkingConflict}
                   onClick={handleSubmit}
                   title={conflictMessage ? 'Resolve the student conflict by selecting a different date.' : ''}
                 >

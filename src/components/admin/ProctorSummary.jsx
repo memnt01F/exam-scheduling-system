@@ -7,14 +7,19 @@ const ProctorSummary = ({ restrictedDepts }) => {
   const { academicTerms, courses } = useCourses();
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedTermId, setSelectedTermId] = useState('');
+  const [selectedTermId, setSelectedTermId] = useState(() => localStorage.getItem('proctorTermId') || '');
   const [deptFilter, setDeptFilter] = useState('');
 
-  // Default to active term
+  const setTermIdPersisted = (id) => {
+    localStorage.setItem('proctorTermId', id);
+    setSelectedTermId(id);
+  };
+
+  // Default to active term only if nothing stored
   useEffect(() => {
-    if (!academicTerms?.length) return;
+    if (selectedTermId || !academicTerms?.length) return;
     const active = academicTerms.find(t => t.isActive || t.status === 'active') || academicTerms[0];
-    if (active) setSelectedTermId(String(active._serverId || active.id));
+    if (active) setTermIdPersisted(String(active._serverId || active.id));
   }, [academicTerms]);
 
   useEffect(() => {
@@ -79,7 +84,7 @@ const ProctorSummary = ({ restrictedDepts }) => {
           className="form-input"
           style={{ width: 'auto' }}
           value={selectedTermId}
-          onChange={e => setSelectedTermId(e.target.value)}
+          onChange={e => setTermIdPersisted(e.target.value)}
         >
           {academicTerms?.map(t => (
             <option key={t._serverId || t.id} value={String(t._serverId || t.id)}>{t.name}</option>

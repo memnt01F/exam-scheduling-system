@@ -218,7 +218,7 @@ a { text-decoration: none; color: inherit; }
 /* ── Booking Grid ── */
 .booking-layout {
   display: grid;
-  grid-template-columns: 2fr 1fr;
+  grid-template-columns: 3fr 1fr;
   gap: 24px;
 }
 @media (max-width: 860px) { .booking-layout { grid-template-columns: 1fr; } }

@@ -454,7 +454,12 @@ const Dashboard = () => {
                           isPhaseActive={isPhaseActive}
                           isPhaseClosed={isPhaseClosed}
                           isPhaseUpcoming={isPhaseUpcoming}
-                          onBook={() => navigate(`/booking/${course.id}${termId ? `?termId=${termId}` : ''}`)}
+                          onBook={() => {
+                            const qs = new URLSearchParams();
+                            if (termId) qs.set('termId', termId);
+                            if (coursePhase?.phaseNumber !== undefined) qs.set('phase', String(coursePhase.phaseNumber));
+                            navigate(`/booking/${course.id}?${qs.toString()}`);
+                          }}
                           formatSlotDate={formatSlotDate}
                         />
                       );

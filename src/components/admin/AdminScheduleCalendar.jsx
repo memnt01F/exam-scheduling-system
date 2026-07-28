@@ -46,7 +46,20 @@ const scoreStyle = (score) => {
   return             { bg: 'rgba(22,163,74,0.17)',   outline: '2px solid rgba(22,163,74,0.28)',  dot: '#16a34a', clickable: true  };
 };
 
-const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term, onBack, readOnly = false }) => {
+const AdminScheduleCalendar = ({
+  exams: initialExams,
+  termId,
+  phaseNumber,
+  term,
+  onBack,
+  readOnly = false,
+  // Booking mode — used by coordinators / dept heads / admin for Phase 2
+  bookingMode = false,
+  bookingCourse = null,      // { id, code, name, level }
+  bookingExamType = null,    // 'Major 1' | 'Major 2' | 'Mid' — controlled by parent
+  bookingCurrentDate = null, // existing booking date string (for NOW indicator on reschedule)
+  onDaySelected = null,      // (dateStr) => void — called when a day is clicked in booking mode
+}) => {
   const [exams, setExams]           = useState(initialExams || []);
   const [viewMode, setViewMode]     = useState('month');
   const [saving, setSaving]         = useState(false);
@@ -162,9 +175,24 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
     setRescheduleConfirm(null);
   };
 
+  // Auto-load scores in booking mode whenever course or exam type changes
+  useEffect(() => {
+    if (!bookingMode || !bookingCourse?.code || !bookingExamType || !term?.name) return;
+    setLoadingScores(true);
+    setDayScores(null);
+    getDayScores({ courseCode: bookingCourse.code, examType: bookingExamType, termName: term.name })
+      .then(result => {
+        const map = {};
+        (result.dates || []).forEach((d, i) => { map[d] = result.scores[i]; });
+        setDayScores(map);
+      })
+      .catch(() => setDayScores({})) // scoring unavailable — allow all non-blocked days
+      .finally(() => setLoadingScores(false));
+  }, [bookingMode, bookingCourse?.code, bookingExamType, term?.name]);
+
   const handleChipClick = async (e, exam) => {
     e.stopPropagation();
-    if (isConfirmed) return;
+    if (bookingMode || isConfirmed) return; // chips are display-only in booking mode
     if (selectedExam?._id === exam._id) { clearSelection(); return; }
 
     setSelectedExam(exam);
@@ -187,6 +215,20 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
 
   const handleCellClick = (day) => {
     if (!day) return;
+
+    if (bookingMode) {
+      const dateStr = toDateStr(day);
+      if (blockedDates[dateStr]) return;
+      // When scores are loaded, only allow days with a defined non-negative score
+      if (dayScores) {
+        const score = dayScores[dateStr];
+        if (score === undefined || score < 0) return;
+      }
+      setSelectedDay(prev => prev && toDateStr(prev) === dateStr ? null : day);
+      onDaySelected?.(dateStr);
+      return;
+    }
+
     if (rescheduleMode && selectedExam && dayScores) {
       const dateStr = toDateStr(day);
       const score = dayScores[dateStr];
@@ -303,7 +345,7 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
 
   const selectedDayExams    = selectedDay ? examsOnDate(selectedDay) : [];
   const selectedDayBookings = selectedDay ? bookingsOnDate(selectedDay) : [];
-  const currentExamDateStr  = selectedExam ? toDateStr(selectedExam.examDate) : null;
+  const currentExamDateStr  = bookingMode ? bookingCurrentDate : (selectedExam ? toDateStr(selectedExam.examDate) : null);
 
   const ScoreLegend = () => {
     const [tip, setTip] = useState(null); // { text, x, y }
@@ -327,7 +369,12 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
             {label}
           </span>
         ))}
-        {rescheduleMode && (
+        {bookingMode && (
+          <span style={{ marginLeft: 'auto', color: 'var(--clr-primary)', fontWeight: 600 }}>
+            Click a green or amber day to book
+          </span>
+        )}
+        {!bookingMode && rescheduleMode && (
           <span style={{ marginLeft: 'auto', color: 'var(--clr-primary)', fontWeight: 600 }}>
             Click a scored day to reschedule
           </span>
@@ -361,8 +408,22 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
             </button>
           )}
           <div>
-            <span className="font-medium" style={{ fontSize: 15 }}>Exams Schedule</span>
-            {term && <span className="text-xs text-muted" style={{ marginLeft: 8 }}>{term.name} · Phase {phaseNumber}</span>}
+            {bookingMode ? (
+              <>
+                <span className="font-medium" style={{ fontSize: 15 }}>
+                  Booking: {bookingCourse?.code}
+                </span>
+                <span className="text-xs text-muted" style={{ marginLeft: 8 }}>
+                  {bookingExamType} · {term?.name}
+                  {loadingScores && ' · Loading scores…'}
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="font-medium" style={{ fontSize: 15 }}>Exams Schedule</span>
+                {term && <span className="text-xs text-muted" style={{ marginLeft: 8 }}>{term.name} · Phase {phaseNumber}</span>}
+              </>
+            )}
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -376,7 +437,7 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
               );
             })}
           </div>
-          {readOnly ? (
+          {!bookingMode && (readOnly ? (
             <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.04em', color: 'var(--clr-muted)', border: '1px solid var(--clr-border)', borderRadius: 6, padding: '4px 10px' }}>
               VIEW ONLY
             </span>
@@ -385,12 +446,12 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
               <CheckCircle size={14} />
               {confirming ? 'Confirming…' : isConfirmed ? 'Confirmed' : 'Confirm Schedule'}
             </button>
-          )}
+          ))}
         </div>
       </div>
 
-      {/* Sticky score bar — visible when an exam is selected */}
-      {selectedExam && !isConfirmed && (
+      {/* Sticky score bar — visible when an exam is selected (non-booking mode only) */}
+      {!bookingMode && selectedExam && !isConfirmed && (
         <div style={{ background: 'var(--clr-surface)', border: '1px solid var(--clr-border)', borderRadius: 8, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
             <span style={{ width: 10, height: 10, borderRadius: '50%', background: examColor(selectedExam.examType), flexShrink: 0 }} />
@@ -442,8 +503,8 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
               <button className="btn btn-outline btn-sm" onClick={nextPeriod} disabled={!canGoNext} style={{ gap: 4 }}>Next <ChevronRight size={14} /></button>
             </div>
 
-            {/* Score legend — only when scores are loaded */}
-            {dayScores && <ScoreLegend />}
+            {/* Score legend — when scores loaded, or in booking mode (always visible) */}
+            {(dayScores || bookingMode) && <ScoreLegend />}
 
             {/* Month view */}
             {viewMode === 'month' && (
@@ -478,19 +539,21 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
 
                       const cellBg = !inMonth
                         ? 'var(--clr-surface)'
-                        : ss
-                          ? ss.bg
-                          : isSelected
-                            ? 'color-mix(in srgb, var(--clr-primary) 6%, var(--clr-card))'
-                            : blockReason
-                              ? 'color-mix(in srgb, #ef4444 7%, var(--clr-card))'
-                              : softReason
-                                ? 'color-mix(in srgb, #f59e0b 6%, var(--clr-card))'
-                                : 'var(--clr-card)';
+                        : bookingMode && isSelected
+                          ? 'color-mix(in srgb, var(--clr-primary) 18%, var(--clr-card))'
+                          : ss
+                            ? ss.bg
+                            : isSelected
+                              ? 'color-mix(in srgb, var(--clr-primary) 6%, var(--clr-card))'
+                              : blockReason
+                                ? 'color-mix(in srgb, #ef4444 7%, var(--clr-card))'
+                                : softReason
+                                  ? 'color-mix(in srgb, #f59e0b 6%, var(--clr-card))'
+                                  : 'var(--clr-card)';
 
-                      const cellOutline = ss
-                        ? ss.outline
-                        : isSelected ? '2px solid var(--clr-primary)' : 'none';
+                      const cellOutline = bookingMode && isSelected
+                        ? '3px solid var(--clr-primary)'
+                        : ss ? ss.outline : isSelected ? '2px solid var(--clr-primary)' : 'none';
 
                       return (
                         <div
@@ -500,7 +563,7 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
                             minHeight: 90, padding: '6px 8px',
                             borderRight: di < 6 ? '1px solid var(--clr-border)' : 'none',
                             background: cellBg,
-                            cursor: !day ? 'default' : (rescheduleMode && ss?.clickable) ? 'copy' : 'pointer',
+                            cursor: !day ? 'default' : (rescheduleMode && ss?.clickable) ? 'copy' : (bookingMode && dayScores && (dayScores[toDateStr(day)] === undefined || dayScores[toDateStr(day)] < 0)) ? 'default' : 'pointer',
                             outline: cellOutline,
                             outlineOffset: -2,
                             transition: 'background 0.1s',
@@ -519,7 +582,10 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
                                   {day.getDate()}
                                 </span>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                  {ss && <span style={{ width: 7, height: 7, borderRadius: '50%', background: ss.dot, flexShrink: 0 }} />}
+                                  {bookingMode && isSelected
+                                    ? <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--clr-primary)' }}>✓</span>
+                                    : ss && <span style={{ width: 7, height: 7, borderRadius: '50%', background: ss.dot, flexShrink: 0 }} />
+                                  }
                                   {isCurrentExam && <span style={{ fontSize: 9, fontWeight: 700, color: examColor(selectedExam?.examType), letterSpacing: '0.02em' }}>NOW</span>}
                                   {wk !== null && <span style={{ fontSize: 10, color: 'var(--clr-muted)', opacity: 0.55 }}>W{wk}</span>}
                                 </div>
@@ -582,22 +648,29 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
                         style={{
                           minHeight: 200, padding: '8px 6px',
                           borderRight: i < 6 ? '1px solid var(--clr-border)' : 'none',
-                          cursor: (rescheduleMode && ss?.clickable) ? 'copy' : 'pointer',
-                          background: ss
-                            ? ss.bg
-                            : isSelected
-                              ? 'color-mix(in srgb, var(--clr-primary) 6%, var(--clr-card))'
-                              : blockReason
-                                ? 'color-mix(in srgb, #ef4444 7%, var(--clr-card))'
-                                : softReason
-                                  ? 'color-mix(in srgb, #f59e0b 6%, var(--clr-card))'
-                                  : 'var(--clr-card)',
-                          outline: ss ? ss.outline : isSelected ? '2px solid var(--clr-primary)' : 'none',
+                          cursor: (rescheduleMode && ss?.clickable) ? 'copy' : (bookingMode && dayScores && (dayScores[toDateStr(day)] === undefined || dayScores[toDateStr(day)] < 0)) ? 'default' : 'pointer',
+                          background: bookingMode && isSelected
+                            ? 'color-mix(in srgb, var(--clr-primary) 18%, var(--clr-card))'
+                            : ss
+                              ? ss.bg
+                              : isSelected
+                                ? 'color-mix(in srgb, var(--clr-primary) 6%, var(--clr-card))'
+                                : blockReason
+                                  ? 'color-mix(in srgb, #ef4444 7%, var(--clr-card))'
+                                  : softReason
+                                    ? 'color-mix(in srgb, #f59e0b 6%, var(--clr-card))'
+                                    : 'var(--clr-card)',
+                          outline: bookingMode && isSelected
+                            ? '3px solid var(--clr-primary)'
+                            : ss ? ss.outline : isSelected ? '2px solid var(--clr-primary)' : 'none',
                           outlineOffset: -2,
                           transition: 'background 0.1s',
                         }}
                       >
-                        {ss && <span style={{ display: 'block', width: 7, height: 7, borderRadius: '50%', background: ss.dot, marginBottom: 4 }} />}
+                        {bookingMode && isSelected
+                          ? <span style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--clr-primary)', marginBottom: 4 }}>✓ Selected</span>
+                          : ss && <span style={{ display: 'block', width: 7, height: 7, borderRadius: '50%', background: ss.dot, marginBottom: 4 }} />
+                        }
                         {isCurrentExam && <div style={{ fontSize: 9, fontWeight: 700, color: examColor(selectedExam?.examType), marginBottom: 2 }}>CURRENT</div>}
                         {blockReason && (
                           <div style={{ fontSize: 10, color: '#b91c1c', fontWeight: 600, marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -620,7 +693,7 @@ const AdminScheduleCalendar = ({ exams: initialExams, termId, phaseNumber, term,
           </div>
 
           {/* Right: day detail panel — hidden during reschedule mode */}
-          {selectedDay && !rescheduleMode && (
+          {selectedDay && !rescheduleMode && !bookingMode && (
             <div style={{ width: 256, flexShrink: 0, borderLeft: '1px solid var(--clr-border)', display: 'flex', flexDirection: 'column' }}>
               <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--clr-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div>

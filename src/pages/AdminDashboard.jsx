@@ -133,10 +133,15 @@ const SystemSettings = () => {
 
   // Exam groups state
   const [examGroups, setExamGroups]               = useState([]);
-  const [examGroupTermId, setExamGroupTermId]      = useState('');
+  const [examGroupTermId, setExamGroupTermId]      = useState(() => localStorage.getItem('examGroupTermId') || '');
   const [showGroupModal, setShowGroupModal]        = useState(false);
   const [editingGroup, setEditingGroup]            = useState(null);
   const [confirmDeleteGroup, setConfirmDeleteGroup] = useState(null);
+
+  const setExamGroupTermIdPersisted = (id) => {
+    localStorage.setItem('examGroupTermId', id);
+    setExamGroupTermId(id);
+  };
 
   useEffect(() => {
     getEnrollmentStats()
@@ -144,10 +149,10 @@ const SystemSettings = () => {
       .catch(() => {});
   }, []);
 
-  // Set default exam group term to the first term
+  // Set default exam group term to the last term, but only if nothing is stored
   useEffect(() => {
     if (!examGroupTermId && terms.length > 0) {
-      setExamGroupTermId(terms[terms.length - 1]._serverId || terms[terms.length - 1].id);
+      setExamGroupTermIdPersisted(terms[terms.length - 1]._serverId || terms[terms.length - 1].id);
     }
   }, [terms]);
 
@@ -368,7 +373,7 @@ const SystemSettings = () => {
               className="form-input"
               style={{ width: 160, height: 32, fontSize: 13 }}
               value={examGroupTermId}
-              onChange={e => setExamGroupTermId(e.target.value)}
+              onChange={e => setExamGroupTermIdPersisted(e.target.value)}
             >
               {terms.map(t => (
                 <option key={t._serverId || t.id} value={t._serverId || t.id}>{t.name}</option>
