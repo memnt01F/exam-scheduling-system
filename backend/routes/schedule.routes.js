@@ -30,8 +30,8 @@ router.get("/jobs/:id", async (req, res) => {
 
 router.get("/day-scores", async (req, res) => {
   try {
-    const { courseCode, examType, termName } = req.query;
-    const qs = new URLSearchParams({ courseCode, examType, termName }).toString();
+    const { courseCode, examType, termId } = req.query;
+    const qs = new URLSearchParams({ courseCode, examType, termId }).toString();
     const r = await fetch(`${SCHEDULER_URL}/day-scores?${qs}`);
     res.status(r.status).json(await r.json());
   } catch (err) {

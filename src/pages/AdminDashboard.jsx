@@ -13,7 +13,7 @@ import ReferenceData from '../components/admin/ReferenceData.jsx';
 import SchedulingManagement from '../components/admin/SchedulingManagement.jsx';
 import AddTermModal from '../components/admin/AddTermModal.jsx';
 import ProctorSummary from '../components/admin/ProctorSummary.jsx';
-import { getEnrollmentStats, uploadEnrollments, getBookings, deleteBooking, getExamGroups, createExamGroup, updateExamGroup, deleteExamGroup } from '../services/api.js';
+import { getEnrollmentStats, uploadEnrollments, rebuildConflicts, getBookings, deleteBooking, getExamGroups, createExamGroup, updateExamGroup, deleteExamGroup } from '../services/api.js';
 
 const tabs = [
   { id: 'users',      label: 'User Management',      icon: Users },
@@ -179,6 +179,9 @@ const SystemSettings = () => {
       const result = await uploadEnrollments(termId, file, user?.name || 'admin');
       const skippedNote = result.skipped > 0 ? ` (${result.skipped.toLocaleString()} rows skipped — missing ID or course code)` : '';
       toast.success(`${result.inserted.toLocaleString()} enrollments uploaded for ${result.termName}${skippedNote}`);
+      await rebuildConflicts(termId).catch(() => {
+        toast.warning('Enrollments saved but conflict cache could not be rebuilt — day scores may be stale.');
+      });
       const data = await getEnrollmentStats();
       setEnrollmentStats(data.stats || []);
     } catch (err) {

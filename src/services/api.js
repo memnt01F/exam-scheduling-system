@@ -257,6 +257,11 @@ export async function uploadEnrollments(termId, file, importedBy = 'admin') {
   return data;
 }
 
+/** POST /conflicts/rebuild?termId= — rebuild the course-conflicts cache after enrollment upload */
+export async function rebuildConflicts(termId) {
+  return request(`/conflicts/rebuild?termId=${encodeURIComponent(termId)}`, { method: 'POST' });
+}
+
 /* ──────────────────────────── Scheduled Exams ──────────────────────────── */
 
 /** GET /api/bookings?phaseNumber=&termId= — algorithm exams for a term + phase */
@@ -354,8 +359,8 @@ export async function getScheduleJob(jobId) {
   return request(`/schedule/jobs/${jobId}`);
 }
 
-export async function getDayScores({ courseCode, examType, termName }) {
-  const qs = new URLSearchParams({ courseCode, examType, termName }).toString();
+export async function getDayScores({ courseCode, examType, termId }) {
+  const qs = new URLSearchParams({ courseCode, examType, termId }).toString();
   return request(`/schedule/day-scores?${qs}`);
 }
 

@@ -58,7 +58,7 @@ const scoreDotColor = (score) => {
 
 const scoreQualityLabel = (s) => s >= 0.7 ? 'Best' : s >= 0.4 ? 'Good' : 'Acceptable';
 
-const TopDaysPanel = ({ dayScores, examsOnDate, bookingsOnDate }) => {
+const TopDaysPanel = ({ dayScores, examsOnDate, bookingsOnDate, onClose }) => {
   const top = useMemo(() => {
     if (!dayScores) return [];
     return Object.entries(dayScores)
@@ -69,10 +69,15 @@ const TopDaysPanel = ({ dayScores, examsOnDate, bookingsOnDate }) => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--clr-border)' }}>
+      <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--clr-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--clr-muted)' }}>
           Top Recommended Days
         </p>
+        {onClose && (
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--clr-muted)', padding: 2, lineHeight: 1 }}>
+            <X size={14} />
+          </button>
+        )}
       </div>
       <div style={{ flex: 1, padding: '12px 14px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
         {top.length === 0 ? (
@@ -144,6 +149,7 @@ const AdminScheduleCalendar = ({
   const [selectedExam, setSelectedExam]           = useState(null);
   const [dayScores, setDayScores]                 = useState(null);   // { dateStr: score } | null
   const [loadingScores, setLoadingScores]         = useState(false);
+  const [showTopDays, setShowTopDays]             = useState(true);
   const [rescheduleMode, setRescheduleMode]       = useState(false);
   const [rescheduleConfirm, setRescheduleConfirm] = useState(null);   // { date, dateStr }
   const [confirmDelete, setConfirmDelete]         = useState(null);   // exam object
@@ -254,7 +260,7 @@ const AdminScheduleCalendar = ({
     if (!bookingMode || !bookingCourse?.code || !bookingExamType || !term?.name) return;
     setLoadingScores(true);
     setDayScores(null);
-    getDayScores({ courseCode: bookingCourse.code, examType: bookingExamType, termName: term.name })
+    getDayScores({ courseCode: bookingCourse.code, examType: bookingExamType, termId })
       .then(result => {
         const map = {};
         (result.dates || []).forEach((d, i) => { map[d] = result.scores[i]; });
@@ -286,15 +292,16 @@ const AdminScheduleCalendar = ({
     setSelectedExam(exam);
     setRescheduleMode(false);
     setDayScores(null);
+    setShowTopDays(true);
     setLoadingScores(true);
 
     try {
-      const result = await getDayScores({ courseCode: exam.courseCode, examType: exam.examType, termName: term?.name });
+      const result = await getDayScores({ courseCode: exam.courseCode, examType: exam.examType, termId });
       const map = {};
       (result.dates || []).forEach((d, i) => { map[d] = result.scores[i]; });
       setDayScores(map);
-    } catch {
-      toast.error('Failed to load day scores');
+    } catch (err) {
+      toast.error(err?.message || 'Failed to load day scores');
       setDayScores({});
     } finally {
       setLoadingScores(false);
@@ -609,7 +616,14 @@ const AdminScheduleCalendar = ({
       <div className="card" style={{ overflow: 'hidden' }}>
         <div style={{ display: 'flex' }}>
 
-          {/* Left: nav + grid */}
+          {/* Left: top recommended days — shown when exam selected + scores loaded */}
+          {dayScores && !rescheduleMode && !bookingMode && selectedExam && showTopDays && (
+            <div style={{ width: 240, flexShrink: 0, borderRight: '1px solid var(--clr-border)', display: 'flex', flexDirection: 'column' }}>
+              <TopDaysPanel dayScores={dayScores} examsOnDate={examsOnDate} bookingsOnDate={bookingsOnDate} onClose={() => setShowTopDays(false)} />
+            </div>
+          )}
+
+          {/* Center: nav + grid */}
           <div style={{ flex: 1, minWidth: 0 }}>
 
             {/* Nav bar */}
@@ -661,14 +675,14 @@ const AdminScheduleCalendar = ({
                         ? 'var(--clr-surface)'
                         : bookingMode && isSelected
                           ? 'color-mix(in srgb, var(--clr-primary) 18%, var(--clr-card))'
-                          : ss
-                            ? ss.bg
-                            : isSelected
-                              ? 'color-mix(in srgb, var(--clr-primary) 6%, var(--clr-card))'
-                              : blockReason
-                                ? 'color-mix(in srgb, #374151 10%, var(--clr-card))'
-                                : softReason
-                                  ? 'color-mix(in srgb, #d1d5db 18%, var(--clr-card))'
+                          : blockReason
+                            ? '#b8bfc9'
+                            : softReason
+                              ? '#dde0e4'
+                              : ss
+                                ? ss.bg
+                                : isSelected
+                                  ? 'color-mix(in srgb, var(--clr-primary) 6%, var(--clr-card))'
                                   : 'var(--clr-card)';
 
                       const cellOutline = bookingMode && isSelected
@@ -704,7 +718,11 @@ const AdminScheduleCalendar = ({
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                                   {bookingMode && isSelected
                                     ? <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--clr-primary)' }}>✓</span>
-                                    : ss && <span style={{ width: 7, height: 7, borderRadius: '50%', background: ss.dot, flexShrink: 0 }} />
+                                    : blockReason
+                                      ? <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#374151', flexShrink: 0 }} />
+                                      : softReason
+                                        ? <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#9ca3af', flexShrink: 0 }} />
+                                        : ss && <span style={{ width: 7, height: 7, borderRadius: '50%', background: ss.dot, flexShrink: 0 }} />
                                   }
                                   {isCurrentExam && <span style={{ fontSize: 9, fontWeight: 700, color: examColor(selectedExam?.examType), letterSpacing: '0.02em' }}>NOW</span>}
                                   {wk !== null && <span style={{ fontSize: 10, color: 'var(--clr-muted)', opacity: 0.55 }}>W{wk}</span>}
@@ -773,14 +791,14 @@ const AdminScheduleCalendar = ({
                           cursor: (rescheduleMode && ss?.clickable) ? 'copy' : (bookingMode && dayScores && (dayScores[toDateStr(day)] === undefined || dayScores[toDateStr(day)] < 0)) ? 'default' : 'pointer',
                           background: bookingMode && isSelected
                             ? 'color-mix(in srgb, var(--clr-primary) 18%, var(--clr-card))'
-                            : ss
-                              ? ss.bg
-                              : isSelected
-                                ? 'color-mix(in srgb, var(--clr-primary) 6%, var(--clr-card))'
-                                : blockReason
-                                  ? 'color-mix(in srgb, #374151 10%, var(--clr-card))'
-                                  : softReason
-                                    ? 'color-mix(in srgb, #d1d5db 18%, var(--clr-card))'
+                            : blockReason
+                              ? '#b8bfc9'
+                              : softReason
+                                ? '#dde0e4'
+                                : ss
+                                  ? ss.bg
+                                  : isSelected
+                                    ? 'color-mix(in srgb, var(--clr-primary) 6%, var(--clr-card))'
                                     : 'var(--clr-card)',
                           outline: bookingMode && isSelected
                             ? '3px solid var(--clr-primary)'
@@ -791,7 +809,11 @@ const AdminScheduleCalendar = ({
                       >
                         {bookingMode && isSelected
                           ? <span style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--clr-primary)', marginBottom: 4 }}>✓ Selected</span>
-                          : ss && <span style={{ display: 'block', width: 7, height: 7, borderRadius: '50%', background: ss.dot, marginBottom: 4 }} />
+                          : blockReason
+                            ? <span style={{ display: 'block', width: 7, height: 7, borderRadius: '50%', background: '#374151', marginBottom: 4 }} />
+                            : softReason
+                              ? <span style={{ display: 'block', width: 7, height: 7, borderRadius: '50%', background: '#9ca3af', marginBottom: 4 }} />
+                              : ss && <span style={{ display: 'block', width: 7, height: 7, borderRadius: '50%', background: ss.dot, marginBottom: 4 }} />
                         }
                         {isCurrentExam && <div style={{ fontSize: 9, fontWeight: 700, color: examColor(selectedExam?.examType), marginBottom: 2 }}>CURRENT</div>}
                         {blockReason && (
@@ -813,13 +835,6 @@ const AdminScheduleCalendar = ({
               </div>
             )}
           </div>
-
-          {/* Right: top recommended days — shown when exam selected + scores loaded, no day panel open */}
-          {dayScores && !selectedDay && !rescheduleMode && !bookingMode && selectedExam && (
-            <div style={{ width: 256, flexShrink: 0, borderLeft: '1px solid var(--clr-border)', display: 'flex', flexDirection: 'column' }}>
-              <TopDaysPanel dayScores={dayScores} examsOnDate={examsOnDate} bookingsOnDate={bookingsOnDate} />
-            </div>
-          )}
 
           {/* Right: day detail panel — hidden during reschedule mode */}
           {selectedDay && !rescheduleMode && !bookingMode && (
@@ -845,7 +860,13 @@ const AdminScheduleCalendar = ({
                 {selectedDayExams.length === 0 && selectedDayBookings.length === 0 ? (
                   <div style={{ textAlign: 'center', padding: '40px 0' }}>
                     <p className="text-sm font-medium">No exams scheduled</p>
-                    <p className="text-xs text-muted" style={{ marginTop: 4 }}>This day is free</p>
+                    <p className="text-xs text-muted" style={{ marginTop: 4 }}>
+                      {blockedDates[toDateStr(selectedDay)]
+                        ? 'Holiday / Vacation'
+                        : softBlockedDates[toDateStr(selectedDay)]
+                          ? 'B54 Unavailable'
+                          : 'This day is free'}
+                    </p>
                   </div>
                 ) : (
                   <>
