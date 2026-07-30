@@ -188,13 +188,50 @@ const AddTermModal = ({ onClose, onSave, term = null }) => {
 
   const removeDate = (dateStr, type) => {
     setIcsData(prev => {
+      const blockType = type === 'hard' ? 'hard' : 'soft';
+      let newBlocked = prev.blockedDates;
+      let newSoft    = prev.softBlockedDates;
+
       if (type === 'hard') {
-        const bd = { ...prev.blockedDates }; delete bd[dateStr];
-        return { ...prev, blockedDates: bd };
+        newBlocked = { ...prev.blockedDates };
+        delete newBlocked[dateStr];
       } else {
-        const sbd = { ...prev.softBlockedDates }; delete sbd[dateStr];
-        return { ...prev, softBlockedDates: sbd };
+        newSoft = { ...prev.softBlockedDates };
+        delete newSoft[dateStr];
       }
+
+      // Drop any event whose entire date range is now absent from the dict
+      const dict = type === 'hard' ? newBlocked : newSoft;
+      const events = prev.events.filter(ev => {
+        if (ev.blockType !== blockType) return true;
+        let d = new Date(ev.startDate + 'T00:00:00');
+        const end = new Date(ev.endDate + 'T00:00:00');
+        while (d <= end) {
+          if (dict[d.toISOString().slice(0, 10)]) return true;
+          d.setDate(d.getDate() + 1);
+        }
+        return false;
+      });
+
+      return { ...prev, events, blockedDates: newBlocked, softBlockedDates: newSoft };
+    });
+  };
+
+  const removeEvent = (idx) => {
+    setIcsData(prev => {
+      const ev = prev.events[idx];
+      const events = prev.events.filter((_, i) => i !== idx);
+      const blockedDates = { ...prev.blockedDates };
+      const softBlockedDates = { ...prev.softBlockedDates };
+      let d = new Date(ev.startDate + 'T00:00:00');
+      const end = new Date(ev.endDate + 'T00:00:00');
+      while (d <= end) {
+        const ds = d.toISOString().slice(0, 10);
+        if (ev.blockType === 'hard') delete blockedDates[ds];
+        else if (ev.blockType === 'soft') delete softBlockedDates[ds];
+        d.setDate(d.getDate() + 1);
+      }
+      return { ...prev, events, blockedDates, softBlockedDates };
     });
   };
 
@@ -338,7 +375,7 @@ const AddTermModal = ({ onClose, onSave, term = null }) => {
               <div style={{ maxHeight: 200, overflow: 'auto', border: '1px solid var(--clr-border)', borderRadius: 'var(--radius)' }}>
                 <table className="data-table" style={{ fontSize: 12 }}>
                   <thead>
-                    <tr><th>Event</th><th>Start</th><th>End</th><th style={{ width: 110 }}>Block type</th></tr>
+                    <tr><th>Event</th><th>Start</th><th>End</th><th style={{ width: 110 }}>Block type</th><th style={{ width: 36 }}></th></tr>
                   </thead>
                   <tbody>
                     {icsData.events.map((ev, i) => (
@@ -376,6 +413,15 @@ const AddTermModal = ({ onClose, onSave, term = null }) => {
                             <option value="hard">Blocked</option>
                             <option value="soft">B54 Unavailable</option>
                           </select>
+                        </td>
+                        <td>
+                          <button
+                            onClick={() => removeEvent(i)}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--clr-muted)', padding: 2, display: 'flex', alignItems: 'center' }}
+                            title="Remove event"
+                          >
+                            <Trash2 size={13} />
+                          </button>
                         </td>
                       </tr>
                     ))}

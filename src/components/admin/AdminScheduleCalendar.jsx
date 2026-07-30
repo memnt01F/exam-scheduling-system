@@ -41,8 +41,8 @@ const getWeekStart = (date) => {
 const scoreStyle = (score) => {
   if (score === undefined) return null;
   if (score < 0) return { bg: 'rgba(209,0,31,0.12)', outline: '2px solid rgba(209,0,31,0.22)', dot: '#d1001f', clickable: false };
-  // Continuous: hue 0° (red) → 120° (green), lightness 62% → 36% (darkens toward best)
-  const hue  = Math.round(score * 120);
+  // Continuous: hue 50° (amber) → 120° (green); red is reserved for conflicts
+  const hue  = Math.round(50 + score * 70);
   const l    = Math.round(62 - score * 26);
   const dot     = `hsl(${hue},72%,${l}%)`;
   const bg      = `hsla(${hue},72%,${l + 20}%,0.18)`;
@@ -51,7 +51,7 @@ const scoreStyle = (score) => {
 };
 
 const scoreDotColor = (score) => {
-  const hue = Math.round(score * 120);
+  const hue = Math.round(50 + score * 70);
   const l   = Math.round(62 - score * 26);
   return `hsl(${hue},72%,${l}%)`;
 };
@@ -102,7 +102,7 @@ const TopDaysPanel = ({ dayScores, examsOnDate, bookingsOnDate, onClose }) => {
                   <span style={{ color: 'var(--clr-muted)', fontWeight: 400, fontSize: 11 }}>
                     {day.toLocaleDateString('en-US', { weekday: 'short' })}
                   </span>
-                  <span style={{ fontSize: 10, fontWeight: 500, padding: '1px 5px', borderRadius: 4, background: `hsla(${Math.round(score * 120)},72%,${Math.round(62 - score * 26)}%,0.15)`, color }}>
+                  <span style={{ fontSize: 10, fontWeight: 500, padding: '1px 5px', borderRadius: 4, background: `hsla(${Math.round(50 + score * 70)},72%,${Math.round(62 - score * 26)}%,0.15)`, color }}>
                     {scoreQualityLabel(score)}
                   </span>
                 </div>
@@ -484,7 +484,7 @@ const AdminScheduleCalendar = ({
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <span style={{
               width: 100, height: 8, borderRadius: 4,
-              background: 'linear-gradient(to right, hsl(0,72%,62%), hsl(60,72%,49%), hsl(120,72%,36%))',
+              background: 'linear-gradient(to right, hsl(50,72%,62%), hsl(85,72%,49%), hsl(120,72%,36%))',
               display: 'block',
             }} />
             <div style={{ display: 'flex', justifyContent: 'space-between', width: 100, fontSize: 9, color: 'var(--clr-muted)' }}>
@@ -715,17 +715,24 @@ const AdminScheduleCalendar = ({
                                 }}>
                                   {day.getDate()}
                                 </span>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                  {bookingMode && isSelected
-                                    ? <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--clr-primary)' }}>✓</span>
-                                    : blockReason
-                                      ? <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#374151', flexShrink: 0 }} />
-                                      : softReason
-                                        ? <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#9ca3af', flexShrink: 0 }} />
-                                        : ss && <span style={{ width: 7, height: 7, borderRadius: '50%', background: ss.dot, flexShrink: 0 }} />
-                                  }
-                                  {isCurrentExam && <span style={{ fontSize: 9, fontWeight: 700, color: examColor(selectedExam?.examType), letterSpacing: '0.02em' }}>NOW</span>}
-                                  {wk !== null && <span style={{ fontSize: 10, color: 'var(--clr-muted)', opacity: 0.55 }}>W{wk}</span>}
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    {bookingMode && isSelected
+                                      ? <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--clr-primary)' }}>✓</span>
+                                      : blockReason
+                                        ? <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#374151', flexShrink: 0 }} />
+                                        : softReason
+                                          ? <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#9ca3af', flexShrink: 0 }} />
+                                          : ss && score < 0 && <span style={{ width: 7, height: 7, borderRadius: '50%', background: ss.dot, flexShrink: 0 }} />
+                                    }
+                                    {isCurrentExam && <span style={{ fontSize: 9, fontWeight: 700, color: examColor(selectedExam?.examType), letterSpacing: '0.02em' }}>NOW</span>}
+                                    {wk !== null && <span style={{ fontSize: 10, color: 'var(--clr-muted)', opacity: 0.55 }}>W{wk}</span>}
+                                  </div>
+                                  {ss && score >= 0 && !blockReason && !softReason && inMonth && (
+                                    <span style={{ fontSize: 9, fontWeight: 700, color: `hsl(${Math.round(50 + score * 70)},72%,28%)`, background: `hsla(${Math.round(50 + score * 70)},65%,${Math.round(77 - score * 26)}%,0.55)`, borderRadius: 8, padding: '1px 5px', lineHeight: 1.4 }}>
+                                      {score.toFixed(2)}
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                               {blockReason && inMonth && (
@@ -813,7 +820,9 @@ const AdminScheduleCalendar = ({
                             ? <span style={{ display: 'block', width: 7, height: 7, borderRadius: '50%', background: '#374151', marginBottom: 4 }} />
                             : softReason
                               ? <span style={{ display: 'block', width: 7, height: 7, borderRadius: '50%', background: '#9ca3af', marginBottom: 4 }} />
-                              : ss && <span style={{ display: 'block', width: 7, height: 7, borderRadius: '50%', background: ss.dot, marginBottom: 4 }} />
+                              : ss && score >= 0
+                                ? <span style={{ display: 'inline-block', fontSize: 9, fontWeight: 700, color: `hsl(${Math.round(50 + score * 70)},72%,28%)`, background: `hsla(${Math.round(50 + score * 70)},65%,${Math.round(77 - score * 26)}%,0.55)`, borderRadius: 8, padding: '1px 5px', lineHeight: 1.4, marginBottom: 4 }}>{score.toFixed(2)}</span>
+                                : ss && <span style={{ display: 'block', width: 7, height: 7, borderRadius: '50%', background: ss.dot, marginBottom: 4 }} />
                         }
                         {isCurrentExam && <div style={{ fontSize: 9, fontWeight: 700, color: examColor(selectedExam?.examType), marginBottom: 2 }}>CURRENT</div>}
                         {blockReason && (
