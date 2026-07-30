@@ -4,9 +4,9 @@ import DashboardLayout from '../components/DashboardLayout.jsx';
 import AdminScheduleCalendar from '../components/admin/AdminScheduleCalendar.jsx';
 import { useCourses } from '../context/CoursesContext.jsx';
 import { getRequiredExamTypes, EXAM_TYPES } from '../lib/mock-data.js';
-import { checkBookingConflict, createBooking, updateBooking } from '../services/api.js';
+import { createBooking, updateBooking } from '../services/api.js';
 
-import { ArrowLeft, Check, X, AlertTriangle, Users, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Check, X, Users, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { toast } from 'sonner';
 
@@ -59,8 +59,6 @@ const BookingPage = () => {
     : currentBookingType || availableTypes.find(t => !course?.bookings[t]) || availableTypes[0] || '';
 
   const [examType, setExamType] = useState(defaultExamType);
-  // Track initial type mainly for conflict-check exclusion id.
-  const [originalExamType] = useState(requestedExamType || currentBookingType || defaultExamType);
 
   const existingBooking = course?.bookings[examType];
 
@@ -77,13 +75,11 @@ const BookingPage = () => {
       ? { week: existingBooking.week, day: existingBooking.day }
       : null
   );
-  const [maleProctors, setMaleProctors] = useState(existingBooking?.maleProctors?.toString() || '');
-  const [femaleProctors, setFemaleProctors] = useState(existingBooking?.femaleProctors?.toString() || '');
+  const [maleProctors, setMaleProctors] = useState(existingBooking?.maleProctors?.toString() ?? '0');
+  const [femaleProctors, setFemaleProctors] = useState(existingBooking?.femaleProctors?.toString() ?? '0');
   const [showConfirm, setShowConfirm] = useState(false);
   const [showTypeSwitchConfirm, setShowTypeSwitchConfirm] = useState(false);
   const [pendingExamType, setPendingExamType] = useState(null);
-  const [conflictMessage, setConflictMessage] = useState(null);
-  const [checkingConflict, setCheckingConflict] = useState(false);
   const [topDays, setTopDays] = useState([]);
 
   if (!course) {
@@ -118,7 +114,6 @@ const BookingPage = () => {
       setMaleProctors('');
       setFemaleProctors('');
     }
-    setConflictMessage(null);
   };
 
   const handleExamTypeChange = (type) => {
@@ -137,33 +132,10 @@ const BookingPage = () => {
     applyExamType(type);
   };
 
-  const handleSelectDate = async (dateStr, weekDay) => {
+  const handleSelectDate = (dateStr, weekDay) => {
     if (!dateStr) return;
     setSelectedDate(dateStr);
     setSelectedWeekDay(weekDay || null);
-    setConflictMessage(null);
-
-    // Live conflict check against backend (FR-CC3) — runs the moment a slot is picked.
-    if (!course?.code || !dateStr) return;
-    const originalBooking = course.bookings[originalExamType];
-    const excludeBookingId = originalBooking?._serverId || undefined;
-    setCheckingConflict(true);
-    try {
-      const result = await checkBookingConflict({
-        courseCode: course.code,
-        examDate: dateStr,
-        excludeBookingId,
-      });
-      if (result?.hasConflict) {
-        setConflictMessage(
-          'Booking Blocked — Student conflict detected. This date already has an exam for shared students.'
-        );
-      }
-    } catch {
-      // Backend unreachable — silently skip; final POST/PUT will catch any conflict.
-    } finally {
-      setCheckingConflict(false);
-    }
   };
 
   const handleSubmit = () => {
@@ -280,19 +252,6 @@ const BookingPage = () => {
             </p>
           </div>
         </div>
-
-        {conflictMessage && (
-          <div className="alert-danger">
-            <AlertTriangle size={20} color="var(--clr-danger)" style={{ flexShrink: 0, marginTop: 2 }} />
-            <div style={{ flex: 1 }}>
-              <p className="alert-danger-title">Booking Blocked</p>
-              <p className="alert-danger-text">{conflictMessage}</p>
-            </div>
-            <button className="btn btn-ghost btn-icon" onClick={() => setConflictMessage(null)}>
-              <X size={16} />
-            </button>
-          </div>
-        )}
 
         <div className="booking-layout">
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -411,69 +370,14 @@ const BookingPage = () => {
                 </div>
                 <button
                   className="btn btn-primary btn-block mt-4"
-                  disabled={!selectedDate || !examType || !maleProctors || !femaleProctors || !!conflictMessage || checkingConflict}
+                  disabled={!selectedDate || !examType || !maleProctors || !femaleProctors}
                   onClick={handleSubmit}
-                  title={conflictMessage ? 'Resolve the student conflict by selecting a different date.' : ''}
                 >
-                  {checkingConflict ? 'Checking conflicts…' : 'Confirm Booking'}
+                  Confirm Booking
                 </button>
               </div>
             </div>
 
-            {/* Top Recommended Days */}
-            {topDays.length > 0 && (
-              <div className="card">
-                <div className="card-header">
-                  <div className="card-title">Top Recommended Days</div>
-                </div>
-                <div className="card-content" style={{ padding: '0 0 12px' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '0 16px' }}>
-                    {topDays.map(({ dateStr, score, courses }, idx) => {
-                      const hue   = Math.round(score * 120);
-                      const l     = Math.round(62 - score * 26);
-                      const color = `hsl(${hue},72%,${l}%)`;
-                      const label = score >= 0.7 ? 'Best' : score >= 0.4 ? 'Good' : 'Acceptable';
-                      const day   = new Date(dateStr + 'T00:00:00');
-                      const isActive = dateStr === selectedDate;
-                      return (
-                        <div
-                          key={dateStr}
-                          onClick={() => handleSelectDate(dateStr, null)}
-                          style={{
-                            display: 'flex', alignItems: 'center', gap: 10,
-                            padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
-                            border: isActive ? `2px solid var(--clr-primary)` : '1px solid var(--clr-border)',
-                            background: isActive ? 'color-mix(in srgb, var(--clr-primary) 8%, var(--clr-card))' : 'var(--clr-card)',
-                            transition: 'background 0.1s',
-                          }}
-                        >
-                          <span style={{ width: 22, height: 22, borderRadius: '50%', background: color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
-                            {idx + 1}
-                          </span>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'baseline', gap: 4 }}>
-                              <span>{day.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-                              <span style={{ color: 'var(--clr-muted)', fontWeight: 400, fontSize: 11 }}>
-                                {day.toLocaleDateString('en-US', { weekday: 'short' })}
-                              </span>
-                              <span style={{ fontSize: 10, fontWeight: 500, padding: '1px 5px', borderRadius: 4, background: `hsla(${hue},72%,${l}%,0.15)`, color }}>
-                                {label}
-                              </span>
-                            </div>
-                            {courses?.length > 0 && (
-                              <div style={{ fontSize: 10, color: 'var(--clr-muted)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {courses.join(', ')}
-                              </div>
-                            )}
-                          </div>
-                          <span style={{ fontSize: 12, fontWeight: 700, color, flexShrink: 0 }}>{score.toFixed(2)}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         </div>
       </div>

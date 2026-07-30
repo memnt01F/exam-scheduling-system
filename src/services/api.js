@@ -86,17 +86,6 @@ export async function updateBooking(id, payload) {
   });
 }
 
-/**
- * Preview same-day student conflicts WITHOUT creating a booking.
- * payload = { courseCode, examDate (YYYY-MM-DD or ISO), excludeBookingId? }
- * Returns { hasConflict, conflictCount, conflictingCourses }.
- */
-export async function checkBookingConflict(payload) {
-  return request("/bookings/check-conflict", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-}
 
 /* ──────────────────────────── Users ──────────────────────────── */
 

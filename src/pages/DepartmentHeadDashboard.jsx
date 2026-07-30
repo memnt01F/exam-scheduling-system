@@ -766,7 +766,11 @@ const DepartmentHeadDashboard = () => {
 
   const liveUser    = users.find(u => u.email === user?.email);
   const managedDepts = liveUser?.managedDepartments || [];
-  const [activeTab, setActiveTab] = useState('assignments');
+  const VALID_TAB_IDS = tabs.map(t => t.id);
+  const [activeTab, setActiveTab] = useState(() => {
+    const saved = localStorage.getItem('deptHead_activeTab');
+    return saved && VALID_TAB_IDS.includes(saved) ? saved : 'assignments';
+  });
 
   // Only coordinators from managed departments
   const coordinators = useMemo(
@@ -838,7 +842,7 @@ const DepartmentHeadDashboard = () => {
               <button
                 key={tab.id}
                 className={`tab-btn ${activeTab === tab.id ? 'tab-active' : ''}`}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => { localStorage.setItem('deptHead_activeTab', tab.id); setActiveTab(tab.id); }}
               >
                 <Icon size={14} /> {tab.label}
               </button>

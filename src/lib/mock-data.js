@@ -274,24 +274,3 @@ const sharedEnrollment = {
   ],
 };
 
-export const checkConflicts = (week, day, courseCode) => {
-  const date = getSlotDate(week, day);
-  if (!date) return { hasConflict: false };
-
-  const dateStr = toDateKey(date);
-  const bookedOnDate = bookedDateMap[dateStr] || [];
-
-  const overlaps = sharedEnrollment[courseCode];
-  if (!overlaps) return { hasConflict: false };
-
-  for (const { course, sharedStudents } of overlaps) {
-    if (bookedOnDate.includes(course)) {
-      return {
-        hasConflict: true,
-        message: `Student conflict detected: ${sharedStudents} students are enrolled in both ${courseCode} and ${course}, which is already scheduled on this day.`,
-      };
-    }
-  }
-
-  return { hasConflict: false };
-};

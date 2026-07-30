@@ -58,7 +58,7 @@ const scoreDotColor = (score) => {
 
 const scoreQualityLabel = (s) => s >= 0.7 ? 'Best' : s >= 0.4 ? 'Good' : 'Acceptable';
 
-const TopDaysPanel = ({ dayScores, examsOnDate, bookingsOnDate, onClose }) => {
+const TopDaysPanel = ({ dayScores, examsOnDate, bookingsOnDate, onClose, onDayClick, selectedDateStr }) => {
   const top = useMemo(() => {
     if (!dayScores) return [];
     return Object.entries(dayScores)
@@ -91,8 +91,19 @@ const TopDaysPanel = ({ dayScores, examsOnDate, bookingsOnDate, onClose }) => {
             ...(bookingsOnDate ? bookingsOnDate(day) : []).map(b => b.courseCode),
           ].filter(Boolean);
           const color = scoreDotColor(score);
+          const isActive = selectedDateStr === dateStr;
           return (
-            <div key={dateStr} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--clr-border)', background: 'var(--clr-card)' }}>
+            <div
+              key={dateStr}
+              onClick={() => onDayClick?.(dateStr)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8,
+                border: isActive ? '2px solid var(--clr-primary)' : '1px solid var(--clr-border)',
+                background: isActive ? 'color-mix(in srgb, var(--clr-primary) 8%, var(--clr-card))' : 'var(--clr-card)',
+                cursor: onDayClick ? 'pointer' : 'default',
+                transition: 'background 0.1s',
+              }}
+            >
               <span style={{ width: 22, height: 22, borderRadius: '50%', background: color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
                 {idx + 1}
               </span>
@@ -201,6 +212,22 @@ const AdminScheduleCalendar = ({
   const examsOnDate    = (date) => { if (!date) return []; const ds = toDateStr(date); return exams.filter(e => toDateStr(e.examDate) === ds); };
   const bookingsOnDate = (date) => { if (!date) return []; const ds = toDateStr(date); return bookings.filter(b => toDateStr(b.examDate) === ds); };
 
+  // Returns true if a day can be clicked to book in bookingMode
+  const isBookableDay = (day) => {
+    if (!day) return false;
+    const dateStr = toDateStr(day);
+    if (blockedDates[dateStr]) return false;
+    if (softBlockedDates[dateStr]) return true; // Phase 2 can book B54 days
+    const score = dayScores?.[dateStr];
+    const hasScoreData = dayScores && Object.keys(dayScores).length > 0;
+    if (hasScoreData) return score !== undefined && score >= 0;
+    // No scoring data — fall back to term bounds
+    const midnight = new Date(day.getFullYear(), day.getMonth(), day.getDate());
+    if (termStartLocal && midnight < termStartLocal) return false;
+    if (termEndLocal && midnight > termEndLocal) return false;
+    return true;
+  };
+
   // Month grid
   const monthGrid = useMemo(() => {
     const year = currentDate.getFullYear(), month = currentDate.getMonth();
@@ -258,6 +285,7 @@ const AdminScheduleCalendar = ({
   // Auto-load scores in booking mode whenever course or exam type changes
   useEffect(() => {
     if (!bookingMode || !bookingCourse?.code || !bookingExamType || !term?.name) return;
+    setShowTopDays(true);
     setLoadingScores(true);
     setDayScores(null);
     getDayScores({ courseCode: bookingCourse.code, examType: bookingExamType, termId })
@@ -266,7 +294,7 @@ const AdminScheduleCalendar = ({
         (result.dates || []).forEach((d, i) => { map[d] = result.scores[i]; });
         setDayScores(map);
       })
-      .catch(() => setDayScores({})) // scoring unavailable — allow all non-blocked days
+      .catch(() => setDayScores(null)) // scoring unavailable — allow all non-blocked days
       .finally(() => setLoadingScores(false));
   }, [bookingMode, bookingCourse?.code, bookingExamType, term?.name]);
 
@@ -312,14 +340,8 @@ const AdminScheduleCalendar = ({
     if (!day) return;
 
     if (bookingMode) {
+      if (!isBookableDay(day)) return;
       const dateStr = toDateStr(day);
-      if (blockedDates[dateStr]) return;
-      // When scores are loaded, only block days with no score or negative score,
-      // UNLESS the day is soft-blocked (B54 unavailable) — Phase 2 can still book there.
-      if (dayScores && !softBlockedDates[dateStr]) {
-        const score = dayScores[dateStr];
-        if (score === undefined || score < 0) return;
-      }
       setSelectedDay(prev => prev && toDateStr(prev) === dateStr ? null : day);
       onDaySelected?.(dateStr);
       return;
@@ -616,10 +638,20 @@ const AdminScheduleCalendar = ({
       <div className="card" style={{ overflow: 'hidden' }}>
         <div style={{ display: 'flex' }}>
 
-          {/* Left: top recommended days — shown when exam selected + scores loaded */}
-          {dayScores && !rescheduleMode && !bookingMode && selectedExam && showTopDays && (
+          {/* Left: top recommended days — shown when exam selected + scores loaded, or in booking mode */}
+          {dayScores && !rescheduleMode && showTopDays && (bookingMode || selectedExam) && (
             <div style={{ width: 240, flexShrink: 0, borderRight: '1px solid var(--clr-border)', display: 'flex', flexDirection: 'column' }}>
-              <TopDaysPanel dayScores={dayScores} examsOnDate={examsOnDate} bookingsOnDate={bookingsOnDate} onClose={() => setShowTopDays(false)} />
+              <TopDaysPanel
+                dayScores={dayScores}
+                examsOnDate={examsOnDate}
+                bookingsOnDate={bookingsOnDate}
+                onClose={() => setShowTopDays(false)}
+                selectedDateStr={bookingMode ? selectedDateOverride : null}
+                onDayClick={bookingMode ? (dateStr) => {
+                  setSelectedDay(new Date(dateStr + 'T00:00:00'));
+                  onDaySelected?.(dateStr);
+                } : null}
+              />
             </div>
           )}
 
@@ -671,6 +703,11 @@ const AdminScheduleCalendar = ({
                       const visibleBookings = dayBookings.slice(0, remaining);
                       const overflow        = (dayExams.length + dayBookings.length) - (visibleExams.length + visibleBookings.length);
 
+                      const bookable = bookingMode && day ? isBookableDay(day) : true;
+                      // Out-of-window: not bookable AND no score (outside exam period).
+                      // Conflicts (score < 0) are also !bookable but need the red background, not gray.
+                      const outOfWindow = bookingMode && !bookable && score === undefined;
+
                       const cellBg = !inMonth
                         ? 'var(--clr-surface)'
                         : bookingMode && isSelected
@@ -679,11 +716,13 @@ const AdminScheduleCalendar = ({
                             ? '#b8bfc9'
                             : softReason
                               ? '#dde0e4'
-                              : ss
-                                ? ss.bg
-                                : isSelected
-                                  ? 'color-mix(in srgb, var(--clr-primary) 6%, var(--clr-card))'
-                                  : 'var(--clr-card)';
+                              : outOfWindow
+                                ? 'var(--clr-surface)'
+                                : ss
+                                  ? ss.bg
+                                  : isSelected
+                                    ? 'color-mix(in srgb, var(--clr-primary) 6%, var(--clr-card))'
+                                    : 'var(--clr-card)';
 
                       const cellOutline = bookingMode && isSelected
                         ? '3px solid var(--clr-primary)'
@@ -697,7 +736,7 @@ const AdminScheduleCalendar = ({
                             minHeight: 90, padding: '6px 8px',
                             borderRight: di < 6 ? '1px solid var(--clr-border)' : 'none',
                             background: cellBg,
-                            cursor: !day ? 'default' : (rescheduleMode && ss?.clickable) ? 'copy' : (bookingMode && dayScores && !softBlockedDates[toDateStr(day)] && (dayScores[toDateStr(day)] === undefined || dayScores[toDateStr(day)] < 0)) ? 'default' : 'pointer',
+                            cursor: !day ? 'default' : (rescheduleMode && ss?.clickable) ? 'copy' : (bookingMode && !bookable) ? 'default' : 'pointer',
                             outline: cellOutline,
                             outlineOffset: -2,
                             transition: 'background 0.1s',
@@ -788,6 +827,9 @@ const AdminScheduleCalendar = ({
                     const score         = dayScores ? dayScores[dateStr] : undefined;
                     const ss            = scoreStyle(score);
 
+                    const bookable = bookingMode ? isBookableDay(day) : true;
+                    const outOfWindow = bookingMode && !bookable && score === undefined;
+
                     return (
                       <div
                         key={i}
@@ -795,18 +837,20 @@ const AdminScheduleCalendar = ({
                         style={{
                           minHeight: 200, padding: '8px 6px',
                           borderRight: i < 6 ? '1px solid var(--clr-border)' : 'none',
-                          cursor: (rescheduleMode && ss?.clickable) ? 'copy' : (bookingMode && dayScores && (dayScores[toDateStr(day)] === undefined || dayScores[toDateStr(day)] < 0)) ? 'default' : 'pointer',
+                          cursor: (rescheduleMode && ss?.clickable) ? 'copy' : (bookingMode && !bookable) ? 'default' : 'pointer',
                           background: bookingMode && isSelected
                             ? 'color-mix(in srgb, var(--clr-primary) 18%, var(--clr-card))'
                             : blockReason
                               ? '#b8bfc9'
                               : softReason
                                 ? '#dde0e4'
-                                : ss
-                                  ? ss.bg
-                                  : isSelected
-                                    ? 'color-mix(in srgb, var(--clr-primary) 6%, var(--clr-card))'
-                                    : 'var(--clr-card)',
+                                : outOfWindow
+                                  ? 'var(--clr-surface)'
+                                  : ss
+                                    ? ss.bg
+                                    : isSelected
+                                      ? 'color-mix(in srgb, var(--clr-primary) 6%, var(--clr-card))'
+                                      : 'var(--clr-card)',
                           outline: bookingMode && isSelected
                             ? '3px solid var(--clr-primary)'
                             : ss ? ss.outline : isSelected ? '2px solid var(--clr-primary)' : 'none',

@@ -5,7 +5,6 @@
  * Algorithm-generated exams (Phase 0/1): phaseNumber is 0 or 1, termId is set.
  *
  * GET  /            — list bookings (see query params below)
- * POST /check-conflict — preview conflicts without creating
  * POST /confirm     — confirm all algorithm exams for a term+phase
  * POST /bulk        — bulk-insert algorithm exams (replaces previous for that term+phase)
  * POST /            — create a Phase 2 manual booking
@@ -17,9 +16,20 @@ const Booking = require("../models/booking.model");
 const CoursePreference = require("../models/coursePreference.model");
 const AuditLog = require("../models/auditLog.model");
 const AcademicTerm = require("../models/academicTerm.model");
-const { hasSameDayStudentConflict, normalizeCourseCode, parseDateToUtcDayBounds } = require("../services/conflictService");
-
 const router = express.Router();
+
+function normalizeCourseCode(courseCode) {
+  return String(courseCode || "").trim().replace(/\s+/g, "").toUpperCase();
+}
+
+function parseDateToUtcDayBounds(examDate) {
+  const raw = String(examDate || "").trim();
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? new Date(`${raw}T00:00:00.000Z`) : new Date(raw);
+  if (Number.isNaN(date.getTime())) { const err = new Error("Invalid examDate"); err.code = "INVALID_EXAM_DATE"; throw err; }
+  const start = new Date(date); start.setUTCHours(0, 0, 0, 0);
+  const end   = new Date(date); end.setUTCHours(23, 59, 59, 999);
+  return { startOfDayUtc: start, endOfDayUtc: end };
+}
 
 const VALID_EXAM_TYPES = ["Major 1", "Major 2", "Major 3", "Mid"];
 const examMode = (t) => (t === "Mid" ? "mid" : "major");
@@ -51,30 +61,6 @@ router.get("/", async (req, res) => {
   }
 });
 
-/**
- * POST /api/bookings/check-conflict — preview conflicts WITHOUT creating a booking.
- */
-router.post("/check-conflict", async (req, res) => {
-  try {
-    const { courseCode, examDate, excludeBookingId } = req.body || {};
-    if (!courseCode || !examDate) {
-      return res.status(400).json({ message: "courseCode and examDate are required" });
-    }
-
-    const hasConflict = await hasSameDayStudentConflict({
-      courseCode,
-      examDate,
-      excludeBookingId,
-    });
-
-    res.json({ hasConflict });
-  } catch (err) {
-    if (err?.code === "INVALID_EXAM_DATE") {
-      return res.status(400).json({ message: "Invalid examDate" });
-    }
-    res.status(500).json({ message: err.message });
-  }
-});
 
 /**
  * POST /api/bookings/confirm — confirm all algorithm exams for a term + phase.
@@ -209,25 +195,6 @@ router.post("/", async (req, res) => {
       });
     }
 
-    // Same-day student conflict check (checks ALL active bookings, including algorithm exams).
-    const hasConflict = await hasSameDayStudentConflict({
-      courseCode: normalized,
-      examDate: date,
-    });
-    if (hasConflict) {
-      await AuditLog.create({
-        action: "BOOKING_CONFLICT",
-        user: createdBy,
-        role: "coordinator",
-        courseCode: normalized,
-        details: `Booking conflict for ${normalized} on ${date.toISOString().slice(0, 10)}`,
-      });
-      return res.status(409).json({
-        message: "Booking conflict detected",
-        hasConflict: true,
-      });
-    }
-
     // Re-activate a previously cancelled/rejected Phase 2 booking.
     if (existingAnyStatus && ["cancelled", "rejected"].includes(existingAnyStatus.status)) {
       existingAnyStatus.examDate = date;
@@ -312,15 +279,6 @@ router.put("/:id", async (req, res) => {
         }
       }
 
-      const hasConflict = await hasSameDayStudentConflict({
-        courseCode: existing.courseCode,
-        examDate: newExamDate,
-        excludeBookingId: existing._id,
-      });
-      if (hasConflict) {
-        return res.status(409).json({ message: "Booking conflict detected", hasConflict: true });
-      }
-
       existing.examDate = newExamDate;
       if (req.body.room !== undefined) existing.room = req.body.room;
       if (req.body.updatedBy) existing.updatedBy = req.body.updatedBy;
@@ -363,26 +321,6 @@ router.put("/:id", async (req, res) => {
     if (otherForCourse) {
       return res.status(409).json({
         message: `An active ${examType} booking already exists for ${courseCode}`,
-      });
-    }
-
-    // Same-day conflict check (includes algorithm exams on the same day).
-    const hasConflict = await hasSameDayStudentConflict({
-      courseCode,
-      examDate,
-      excludeBookingId: existing._id,
-    });
-    if (hasConflict) {
-      await AuditLog.create({
-        action: "BOOKING_CONFLICT",
-        user: updatedBy,
-        role: "coordinator",
-        courseCode,
-        details: `Reschedule conflict for ${courseCode} on ${examDate.toISOString().slice(0, 10)}`,
-      });
-      return res.status(409).json({
-        message: "Booking conflict detected",
-        hasConflict: true,
       });
     }
 
