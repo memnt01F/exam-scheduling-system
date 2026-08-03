@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout.jsx';
 import AdminScheduleCalendar from '../components/admin/AdminScheduleCalendar.jsx';
 import { useCourses } from '../context/CoursesContext.jsx';
 import { getRequiredExamTypes, EXAM_TYPES } from '../lib/mock-data.js';
-import { createBooking, updateBooking } from '../services/api.js';
+import { createBooking, updateBooking, getBookings } from '../services/api.js';
 
 import { ArrowLeft, Check, X, Users, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -81,6 +81,16 @@ const BookingPage = () => {
   const [showTypeSwitchConfirm, setShowTypeSwitchConfirm] = useState(false);
   const [pendingExamType, setPendingExamType] = useState(null);
   const [topDays, setTopDays] = useState([]);
+  const [confirmedExams, setConfirmedExams] = useState([]);
+
+  useEffect(() => {
+    if (!termIdParam) return;
+    getBookings({ termId: termIdParam })
+      .then(data => setConfirmedExams(
+        Array.isArray(data) ? data.filter(e => (e.status === 'confirmed' || e.status === 'approved') && e.phaseNumber !== 2) : []
+      ))
+      .catch(() => setConfirmedExams([]));
+  }, [termIdParam]);
 
   if (!course) {
     return (
@@ -256,7 +266,7 @@ const BookingPage = () => {
         <div className="booking-layout">
           <div style={{ flex: 1, minWidth: 0 }}>
             <AdminScheduleCalendar
-              exams={[]}
+              exams={confirmedExams}
               termId={termIdParam}
               phaseNumber={2}
               term={termIdParam ? academicTerms.find(t => (t._serverId || t.id) === termIdParam) : null}

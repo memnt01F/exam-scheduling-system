@@ -5,7 +5,7 @@ import SchedulingManagement from '../components/admin/SchedulingManagement.jsx';
 import ProctorSummary from '../components/admin/ProctorSummary.jsx';
 import { useCourses } from '../context/CoursesContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
-import { getBookings, createBooking, updateBooking, deleteBooking, getScheduledExams, getAssignments, bulkSaveAssignments } from '../services/api.js';
+import { getBookings, createBooking, updateBooking, deleteBooking, getAssignments, bulkSaveAssignments } from '../services/api.js';
 import AdminScheduleCalendar from '../components/admin/AdminScheduleCalendar.jsx';
 import { BookOpen, BarChart2, Search, AlertTriangle, Users, CalendarDays, Plus, Pencil, X, Trash2, ChevronDown, UserCheck, Check } from 'lucide-react';
 import { toast } from 'sonner';
@@ -727,8 +727,8 @@ const CalendarTab = () => {
   useEffect(() => {
     if (!selectedTermId) return;
     setLoading(true);
-    getScheduledExams({ termId: selectedTermId, phase: 0 })
-      .then(data => setExams(Array.isArray(data) ? data.filter(e => e.status !== 'pending') : []))
+    getBookings({ termId: selectedTermId })
+      .then(data => setExams(Array.isArray(data) ? data.filter(e => (e.status === 'confirmed' || e.status === 'approved') && e.phaseNumber !== 2) : []))
       .catch(() => setExams([]))
       .finally(() => setLoading(false));
   }, [selectedTermId]);
@@ -750,7 +750,6 @@ const CalendarTab = () => {
         <AdminScheduleCalendar
           exams={exams}
           termId={selectedTermId}
-          phaseNumber={0}
           term={selectedTerm}
           readOnly
         />

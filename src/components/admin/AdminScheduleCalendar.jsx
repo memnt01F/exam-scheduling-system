@@ -152,6 +152,8 @@ const AdminScheduleCalendar = ({
 }) => {
   const [exams, setExams]           = useState(initialExams || []);
   const [viewMode, setViewMode]     = useState('month');
+
+  useEffect(() => { setExams(initialExams || []); }, [initialExams]);
   const [saving, setSaving]         = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [selectedDay, setSelectedDay] = useState(null);
@@ -566,7 +568,7 @@ const AdminScheduleCalendar = ({
             ) : (
               <>
                 <span className="font-medium" style={{ fontSize: 15 }}>Exams Schedule</span>
-                {term && <span className="text-xs text-muted" style={{ marginLeft: 8 }}>{term.name} · Phase {phaseNumber}</span>}
+                {term && <span className="text-xs text-muted" style={{ marginLeft: 8 }}>{term.name}{phaseNumber != null ? ` · Phase ${phaseNumber}` : ''}</span>}
               </>
             )}
           </div>

@@ -1,7 +1,6 @@
 import { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react';
 import { toast } from 'sonner';
-import { coordinatorCourses as initialCourses, generateExamSlots, phases as initialPhases, formatSlotDate as staticFormatSlotDate, weekStartDates as defaultWeekStartDates, blockedDates as defaultBlockedDates, getSlotDate as staticGetSlotDate } from '../lib/mock-data.js';
-import { auditLogs as initialAuditLogs, allUsers as initialUsers, academicTerms as initialTerms } from '../lib/mock-admin-data.js';
+import { formatSlotDate as staticFormatSlotDate, getSlotDate as staticGetSlotDate } from '../lib/mock-data.js';
 import {
   getBookings, createBooking, getPhases, updatePhase,
   updateBooking as updateBookingApi, deleteBooking as deleteBookingApi,
@@ -14,7 +13,7 @@ import {
 
 const CoursesContext = createContext(null);
 
-let auditIdCounter = initialAuditLogs.length + 1;
+let auditIdCounter = 1;
 
 /**
  * Build a toDateKey helper.
@@ -72,21 +71,21 @@ function buildExamSlots(weekStarts, blocked) {
 export const CoursesProvider = ({ children }) => {
   const normalizeCode = (s) => String(s || '').replace(/\s+/g, '').toUpperCase();
 
-  const [courses, setCourses] = useState(initialCourses.map(c => ({ ...c, bookings: { ...c.bookings } })));
-  const [examSlots, setExamSlots] = useState(generateExamSlots);
-  const [phases, setPhases] = useState(initialPhases.map(p => ({ ...p })));
-  const [auditLogs, setAuditLogs] = useState([...initialAuditLogs]);
-  const [users, setUsers] = useState(initialUsers.map(u => ({ ...u, assignedCourses: u.assignedCourses || [] })));
-  const [academicTerms, setAcademicTerms] = useState(initialTerms.map(t => ({ ...t })));
+  const [courses, setCourses] = useState([]);
+  const [examSlots, setExamSlots] = useState([]);
+  const [phases, setPhases] = useState([]);
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [academicTerms, setAcademicTerms] = useState([]);
 
-  // Active term calendar data — when null, use defaults from mock-data.js
+  // Active term calendar data — populated when a term is activated
   const [activeTermCalendar, setActiveTermCalendar] = useState(null);
 
-  // Derived: effective calendar data
-  const effectiveWeekStartDates = activeTermCalendar?.weekStartDates || defaultWeekStartDates;
-  const effectiveBlockedDates = activeTermCalendar?.blockedDates || defaultBlockedDates;
-  const effectiveTermStart = activeTermCalendar?.termStart || '2026-01-11';
-  const effectiveTermEnd = activeTermCalendar?.termEnd || '2026-05-21';
+  // Derived: effective calendar data (empty until a term is activated)
+  const effectiveWeekStartDates = activeTermCalendar?.weekStartDates || [];
+  const effectiveBlockedDates = activeTermCalendar?.blockedDates || {};
+  const effectiveTermStart = activeTermCalendar?.termStart || null;
+  const effectiveTermEnd = activeTermCalendar?.termEnd || null;
 
   // Helper functions that use the effective calendar
   const getSlotDate = useCallback((week, day) => {
@@ -109,7 +108,7 @@ export const CoursesProvider = ({ children }) => {
   const activateTermCalendar = useCallback((calendarData) => {
     if (!calendarData) {
       setActiveTermCalendar(null);
-      setExamSlots(generateExamSlots);
+      setExamSlots([]);
       return;
     }
     setActiveTermCalendar(calendarData);
@@ -1045,8 +1044,8 @@ export const useCourses = () => {
     courses: [], examSlots: [], phases: [], auditLogs: [], users: [], setUsers: () => {},
     academicTerms: [], setAcademicTerms: () => {}, addAcademicTerm: async () => ({ success: false }), updateAcademicTerm: async () => ({ success: false }), deleteAcademicTerm: async () => ({ success: false }), refreshTerms: async () => null,
     activeTermCalendar: null, activateTermCalendar: () => {},
-    effectiveWeekStartDates: defaultWeekStartDates, effectiveBlockedDates: defaultBlockedDates,
-    effectiveTermStart: '2026-01-11', effectiveTermEnd: '2026-05-21',
+    effectiveWeekStartDates: [], effectiveBlockedDates: {},
+    effectiveTermStart: null, effectiveTermEnd: null,
     getSlotDate: staticGetSlotDate, formatSlotDate: staticFormatSlotDate,
     updatePhases: () => {}, saveAllPhases: async () => ({ success: false }),
     saveTermPhases: async () => ({ success: false }), refreshPhases: async () => {}, initPhasesForTerm: async () => ({ success: false }),
