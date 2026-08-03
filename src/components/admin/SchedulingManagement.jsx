@@ -216,10 +216,17 @@ const SchedulingManagement = ({ restrictedDepts }) => {
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
   const handleGenerate = async () => {
+    if (!selectedTermId) {
+      setGenError('Select a term before generating a schedule.');
+      return;
+    }
     setGenerating(true);
     setGenError(null);
     try {
-      const { jobId } = await generateSchedule({ phaseNumber: selectedPhaseNum });
+      const { jobId } = await generateSchedule({
+        termId: selectedTermId,
+        phaseNumber: selectedPhaseNum,
+      });
       pollRef.current = setInterval(async () => {
         try {
           const job = await getScheduleJob(jobId);
