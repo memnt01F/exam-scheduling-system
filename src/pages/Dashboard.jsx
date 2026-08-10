@@ -318,8 +318,8 @@ const Dashboard = () => {
     if (!termId) { toast.error('No active term found'); return; }
     const term = academicTerms?.find(t => String(t._serverId || t.id) === String(termId)) || { _id: termId };
     try {
-      const data = await getScheduledExams({ termId, phase: 0 });
-      const confirmed = Array.isArray(data) ? data.filter(e => e.confirmedAt) : [];
+      const data = await getScheduledExams({ termId });
+      const confirmed = Array.isArray(data) ? data.filter(e => e.confirmedAt && e.phaseNumber !== 2) : [];
       setScheduleExams(confirmed);
     } catch {
       setScheduleExams([]);
@@ -334,7 +334,6 @@ const Dashboard = () => {
         <AdminScheduleCalendar
           exams={scheduleExams}
           termId={calendarTerm._serverId || calendarTerm.id || calendarTerm._id}
-          phaseNumber={0}
           term={calendarTerm}
           readOnly
           onBack={() => setShowScheduleCalendar(false)}
