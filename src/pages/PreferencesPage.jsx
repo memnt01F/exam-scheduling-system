@@ -143,6 +143,10 @@ const PreferencesPage = () => {
       toast.error('Cannot submit — backend is offline or no target term is configured.');
       return;
     }
+    if (!form.examType) {
+      toast.error('Please select an exam type before submitting.');
+      return;
+    }
     try {
       await upsertPreference({
         courseCode: normalizedCode,

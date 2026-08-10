@@ -134,6 +134,10 @@ const AdminPreferencesView = ({ phaseNum, termId, phase, term, onBack, restricte
   const handleSubmit = async (courseCode, coordinator) => {
     const state = formStates[courseCode];
     if (!state || state.saving || !backendOnline) return;
+    if (!state.form.examType) {
+      toast.error('Please select an exam type before saving.');
+      return;
+    }
 
     setFormStates(prev => ({ ...prev, [courseCode]: { ...prev[courseCode], saving: true } }));
 
