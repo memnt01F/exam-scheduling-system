@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useCourses } from '../../context/CoursesContext.jsx';
 import { getPreferences, getEnrollmentStats, getScheduledExams } from '../../services/api.js';
 import { toast } from 'sonner';
@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import AdminPreferencesView from './AdminPreferencesView.jsx';
 import AdminScheduleCalendar from './AdminScheduleCalendar.jsx';
+import PreferenceImport from './PreferenceImport.jsx';
 
 /* ── status config ── */
 const STATUS_CFG = {
@@ -93,8 +94,8 @@ const SchedulingManagement = ({ restrictedDepts }) => {
   /* reset to page 1 when filters, phase, or term change */
   useEffect(() => { setPage(1); }, [search, deptFilter, statusFilter, selectedPhaseNum, selectedTermId]);
 
-  /* fetch preferences when term changes */
-  useEffect(() => {
+  /* fetch preferences for the selected term (reused after an import) */
+  const reloadPreferences = useCallback(() => {
     if (!selectedTermId) return;
     setLoadingPrefs(true);
     getPreferences({ termId: selectedTermId })
@@ -102,6 +103,8 @@ const SchedulingManagement = ({ restrictedDepts }) => {
       .catch(() => setPreferences([]))
       .finally(() => setLoadingPrefs(false));
   }, [selectedTermId]);
+
+  useEffect(() => { reloadPreferences(); }, [reloadPreferences]);
 
   /* fetch enrollment stats once on mount */
   useEffect(() => {
@@ -138,6 +141,13 @@ const SchedulingManagement = ({ restrictedDepts }) => {
   const selectedTerm = useMemo(() =>
     terms.find(t => String(t._serverId || t.id) === String(selectedTermId)),
     [terms, selectedTermId]
+  );
+
+  // Course codes that already have a preference for the selected term — used to
+  // preview which imported rows are new vs. skipped (existing is never overwritten).
+  const existingPrefCodes = useMemo(
+    () => new Set(preferences.map(p => String(p.courseCode).toUpperCase().trim())),
+    [preferences]
   );
 
   // Phase 0 → level 1, Phase 1 → level 2
@@ -280,15 +290,27 @@ const SchedulingManagement = ({ restrictedDepts }) => {
           </select>
         </div>
 
-        <button
-          className="btn btn-outline btn-sm"
-          onClick={() => setShowPreferencesView(true)}
-          disabled={!selectedTermId}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}
-        >
-          <ClipboardList size={14} />
-          {restrictedDepts?.length ? 'View Preferences' : 'View All Preferences'}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {/* Import course preferences from Excel/CSV — admin only. Disabled until a term is selected. */}
+          {!restrictedDepts?.length && (
+            <PreferenceImport
+              termId={selectedTermId}
+              termName={selectedTerm?.name}
+              existingCodes={existingPrefCodes}
+              onImported={reloadPreferences}
+            />
+          )}
+
+          <button
+            className="btn btn-outline btn-sm"
+            onClick={() => setShowPreferencesView(true)}
+            disabled={!selectedTermId}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}
+          >
+            <ClipboardList size={14} />
+            {restrictedDepts?.length ? 'View Preferences' : 'View All Preferences'}
+          </button>
+        </div>
       </div>
 
       {/* ── Phase info bar ── */}

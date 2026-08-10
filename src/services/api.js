@@ -220,6 +220,20 @@ export async function updatePreference(id, payload) {
   });
 }
 
+/**
+ * Bulk-import preferences for a term from a parsed Excel/CSV file.
+ * Existing courses for the term are skipped (never overwritten).
+ * payload = { termId, importedBy?, rows: [{ courseCode, examType, major1Weeks,
+ *             major2Weeks, midtermWeeks, preferredDays, unpreferredDays, comments }] }
+ * Returns { inserted, skipped, insertedCodes, skippedCodes }.
+ */
+export async function importPreferences(payload) {
+  return request("/preferences/import", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 /* ──────────────────────────── Enrollments ──────────────────────────── */
 
 /** Returns enrollment counts grouped by termId: { stats: [{termId, count, lastUpdated}] } */
