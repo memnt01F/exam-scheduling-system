@@ -425,7 +425,7 @@ const BookingPage = () => {
             </p>
             <div style={{ background: 'var(--clr-muted-bg)', borderRadius: 'var(--radius)', padding: 16 }} className="space-y-2 text-sm">
               <p><span className="text-muted">Course:</span>{' '}<strong>{course.code} — {course.name}</strong></p>
-              <p><span className="text-muted">Current:</span>{' '}<strong>{currentBookingType || '—'}</strong></p>
+              <p><span className="text-muted">Current:</span>{' '}<strong>{existingTypes.join(' & ') || '—'}</strong></p>
               <p><span className="text-muted">New:</span>{' '}<strong>{pendingExamType || '—'}</strong></p>
             </div>
             <div className="modal-footer">

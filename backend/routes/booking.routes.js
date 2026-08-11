@@ -316,7 +316,7 @@ router.put("/:id", async (req, res) => {
       courseCode,
       examType,
       phaseNumber: 2,
-      status: { $in: ["pending", "approved"] },
+      status: { $in: ["pending", "approved", "confirmed"] },
     }).select("_id");
     if (otherForCourse) {
       return res.status(409).json({
@@ -330,15 +330,39 @@ router.put("/:id", async (req, res) => {
     const oldMode = examMode(existing.examType);
     const newMode = examMode(examType);
     if (oldMode !== newMode) {
-      await Booking.updateMany(
-        {
-          _id: { $ne: existing._id },
-          courseCode,
-          phaseNumber: 2,
-          status: { $in: ["pending", "approved"] },
-        },
-        { $set: { status: "cancelled" } }
-      );
+      // Hard-delete ALL phase 2 bookings for this course (including existing) so
+      // old exam types are fully removed and a clean new booking is created.
+      await Booking.deleteMany({
+        courseCode,
+        phaseNumber: 2,
+        status: { $in: ["pending", "approved", "confirmed"] },
+      });
+
+      const newBooking = await Booking.create({
+        courseCode,
+        examType,
+        examDate,
+        level,
+        maleProctors,
+        femaleProctors,
+        createdBy: updatedBy,
+        notes: req.body.notes || existing.notes,
+        termId: existing.termId,
+        status: existing.status,
+        phaseNumber: 2,
+      });
+
+      await AuditLog.create({
+        action: "RESCHEDULE_BOOKING",
+        user: updatedBy,
+        role: req.body.role || "coordinator",
+        courseCode,
+        bookingId: newBooking._id,
+        details: `Mode-switch ${courseCode}: ${oldSnapshot.examType} → ${examType} on ${examDate.toISOString().slice(0, 10)} (all prior bookings cancelled)`,
+        metadata: { old: oldSnapshot, new: { examType, examDate } },
+      });
+
+      return res.json(newBooking);
     }
 
     existing.courseCode = courseCode;

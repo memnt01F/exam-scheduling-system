@@ -457,6 +457,14 @@ const Dashboard = () => {
                             const qs = new URLSearchParams();
                             if (termId) qs.set('termId', termId);
                             if (coursePhase?.phaseNumber !== undefined) qs.set('phase', String(coursePhase.phaseNumber));
+                            if (coursePhase?.phaseNumber === 2 && getCourseBookingStatus(course) === 'fully_booked') {
+                              const existingType = Object.keys(course.bookings || {})[0];
+                              const existingBooking = existingType ? course.bookings[existingType] : null;
+                              if (existingBooking?._serverId) {
+                                qs.set('bookingId', existingBooking._serverId);
+                                qs.set('examType', existingType);
+                              }
+                            }
                             navigate(`/booking/${course.id}?${qs.toString()}`);
                           }}
                           formatSlotDate={formatSlotDate}
