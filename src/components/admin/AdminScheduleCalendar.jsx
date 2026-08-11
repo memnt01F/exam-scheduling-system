@@ -219,7 +219,7 @@ const AdminScheduleCalendar = ({
     if (!day) return false;
     const dateStr = toDateStr(day);
     if (blockedDates[dateStr]) return false;
-    if (softBlockedDates[dateStr]) return true; // Phase 2 can book B54 days
+    // softBlockedDates are informational only — fall through to score check
     const score = dayScores?.[dateStr];
     const hasScoreData = dayScores && Object.keys(dayScores).length > 0;
     if (hasScoreData) return score !== undefined && score >= 0;
@@ -490,15 +490,6 @@ const AdminScheduleCalendar = ({
           <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#374151', flexShrink: 0, display: 'inline-block' }} />
           Blocked
         </span>
-        {/* B54 Unavailable dot */}
-        <span
-          onMouseEnter={e => { const r = e.currentTarget.getBoundingClientRect(); setTip({ text: 'B54 Unavailable — Building 54 is not available. Phase 0 exams cannot be scheduled here; Phase 1 and 2 are unaffected.', x: r.left, y: r.bottom }); }}
-          onMouseLeave={() => setTip(null)}
-          style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'default' }}
-        >
-          <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#9ca3af', flexShrink: 0, display: 'inline-block' }} />
-          B54 Unavailable
-        </span>
         {/* Continuous gradient bar */}
         <span
           onMouseEnter={e => { const r = e.currentTarget.getBoundingClientRect(); setTip({ text: 'Continuous score: left = poor (few options, many conflicts), right = best available days.', x: r.left, y: r.bottom }); }}
@@ -716,15 +707,13 @@ const AdminScheduleCalendar = ({
                           ? 'color-mix(in srgb, var(--clr-primary) 18%, var(--clr-card))'
                           : blockReason
                             ? '#b8bfc9'
-                            : softReason
-                              ? '#dde0e4'
-                              : outOfWindow
-                                ? 'var(--clr-surface)'
-                                : ss
-                                  ? ss.bg
-                                  : isSelected
-                                    ? 'color-mix(in srgb, var(--clr-primary) 6%, var(--clr-card))'
-                                    : 'var(--clr-card)';
+                            : outOfWindow
+                              ? 'var(--clr-surface)'
+                              : ss
+                                ? ss.bg
+                                : isSelected
+                                  ? 'color-mix(in srgb, var(--clr-primary) 6%, var(--clr-card))'
+                                  : 'var(--clr-card)';
 
                       const cellOutline = bookingMode && isSelected
                         ? '3px solid var(--clr-primary)'
@@ -738,6 +727,7 @@ const AdminScheduleCalendar = ({
                             minHeight: 90, padding: '6px 8px',
                             borderRight: di < 6 ? '1px solid var(--clr-border)' : 'none',
                             background: cellBg,
+                            position: 'relative',
                             cursor: !day ? 'default' : (rescheduleMode && ss?.clickable) ? 'copy' : (bookingMode && !bookable) ? 'default' : 'pointer',
                             outline: cellOutline,
                             outlineOffset: -2,
@@ -769,7 +759,7 @@ const AdminScheduleCalendar = ({
                                     {isCurrentExam && <span style={{ fontSize: 9, fontWeight: 700, color: examColor(selectedExam?.examType), letterSpacing: '0.02em' }}>NOW</span>}
                                     {wk !== null && <span style={{ fontSize: 10, color: 'var(--clr-muted)', opacity: 0.55 }}>W{wk}</span>}
                                   </div>
-                                  {ss && score >= 0 && !blockReason && !softReason && inMonth && (
+                                  {ss && score >= 0 && !blockReason && inMonth && (
                                     <span style={{ fontSize: 9, fontWeight: 700, color: `hsl(${Math.round(50 + score * 70)},72%,28%)`, background: `hsla(${Math.round(50 + score * 70)},65%,${Math.round(77 - score * 26)}%,0.55)`, borderRadius: 8, padding: '1px 5px', lineHeight: 1.4 }}>
                                       {score.toFixed(2)}
                                     </span>
@@ -782,8 +772,8 @@ const AdminScheduleCalendar = ({
                                 </div>
                               )}
                               {softReason && inMonth && (
-                                <div style={{ fontSize: 10, color: '#6b7280', fontWeight: 600, marginBottom: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                  {softReason.length > 18 ? softReason.slice(0, 16) + '…' : softReason}
+                                <div style={{ fontSize: 10, color: '#374151', fontWeight: 600, marginBottom: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', background: '#e5e7eb', borderRadius: 4, padding: '1px 5px', display: 'inline-block', maxWidth: '100%' }}>
+                                  B54 Unavailable
                                 </div>
                               )}
                               {visibleExams.map(exam => <ExamChip key={exam._id} exam={exam} />)}
@@ -844,15 +834,14 @@ const AdminScheduleCalendar = ({
                             ? 'color-mix(in srgb, var(--clr-primary) 18%, var(--clr-card))'
                             : blockReason
                               ? '#b8bfc9'
-                              : softReason
-                                ? '#dde0e4'
-                                : outOfWindow
-                                  ? 'var(--clr-surface)'
-                                  : ss
-                                    ? ss.bg
-                                    : isSelected
-                                      ? 'color-mix(in srgb, var(--clr-primary) 6%, var(--clr-card))'
-                                      : 'var(--clr-card)',
+                              : outOfWindow
+                                ? 'var(--clr-surface)'
+                                : ss
+                                  ? ss.bg
+                                  : isSelected
+                                    ? 'color-mix(in srgb, var(--clr-primary) 6%, var(--clr-card))'
+                                    : 'var(--clr-card)',
+                          position: 'relative',
                           outline: bookingMode && isSelected
                             ? '3px solid var(--clr-primary)'
                             : ss ? ss.outline : isSelected ? '2px solid var(--clr-primary)' : 'none',
@@ -870,6 +859,9 @@ const AdminScheduleCalendar = ({
                                 ? <span style={{ display: 'inline-block', fontSize: 9, fontWeight: 700, color: `hsl(${Math.round(50 + score * 70)},72%,28%)`, background: `hsla(${Math.round(50 + score * 70)},65%,${Math.round(77 - score * 26)}%,0.55)`, borderRadius: 8, padding: '1px 5px', lineHeight: 1.4, marginBottom: 4 }}>{score.toFixed(2)}</span>
                                 : ss && <span style={{ display: 'block', width: 7, height: 7, borderRadius: '50%', background: ss.dot, marginBottom: 4 }} />
                         }
+                        {ss && score >= 0 && softReason && !blockReason && (
+                          <span style={{ display: 'inline-block', fontSize: 9, fontWeight: 700, color: `hsl(${Math.round(50 + score * 70)},72%,28%)`, background: `hsla(${Math.round(50 + score * 70)},65%,${Math.round(77 - score * 26)}%,0.55)`, borderRadius: 8, padding: '1px 5px', lineHeight: 1.4, marginBottom: 4 }}>{score.toFixed(2)}</span>
+                        )}
                         {isCurrentExam && <div style={{ fontSize: 9, fontWeight: 700, color: examColor(selectedExam?.examType), marginBottom: 2 }}>CURRENT</div>}
                         {blockReason && (
                           <div style={{ fontSize: 10, color: '#374151', fontWeight: 600, marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -877,8 +869,8 @@ const AdminScheduleCalendar = ({
                           </div>
                         )}
                         {softReason && (
-                          <div style={{ fontSize: 10, color: '#6b7280', fontWeight: 600, marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {softReason.length > 22 ? softReason.slice(0, 20) + '…' : softReason}
+                          <div style={{ fontSize: 10, color: '#374151', fontWeight: 600, marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', background: '#e5e7eb', borderRadius: 4, padding: '1px 5px', display: 'inline-block', maxWidth: '100%' }}>
+                            B54 Unavailable
                           </div>
                         )}
                         {examsOnDate(day).map(exam => <ExamChip key={exam._id} exam={exam} />)}
