@@ -276,6 +276,11 @@ export async function confirmSchedule(payload) {
   return request('/bookings/confirm', { method: 'POST', body: JSON.stringify(payload) });
 }
 
+/** POST /api/bookings/unconfirm — reverse a confirmed schedule for a term + phase */
+export async function unconfirmSchedule(payload) {
+  return request('/bookings/unconfirm', { method: 'POST', body: JSON.stringify(payload) });
+}
+
 /** POST /api/bookings/bulk — bulk-insert algorithm exams (cancels previous for same term+phase) */
 export async function createScheduledExamsBulk(payload) {
   return request('/bookings/bulk', { method: 'POST', body: JSON.stringify(payload) });

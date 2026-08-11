@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
-import { ArrowLeft, CheckCircle, ChevronLeft, ChevronRight, X } from 'lucide-react';
-import { updateScheduledExam, deleteScheduledExam, confirmSchedule, getBookings, getDayScores } from '../../services/api.js';
+import { ArrowLeft, CheckCircle, ChevronLeft, ChevronRight, RotateCcw, X } from 'lucide-react';
+import { updateScheduledExam, deleteScheduledExam, confirmSchedule, unconfirmSchedule, getBookings, getDayScores } from '../../services/api.js';
 import { toast } from 'sonner';
 
 const DAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
@@ -156,6 +156,7 @@ const AdminScheduleCalendar = ({
   useEffect(() => { setExams(initialExams || []); }, [initialExams]);
   const [saving, setSaving]         = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [unconfirming, setUnconfirming] = useState(false);
   const [selectedDay, setSelectedDay] = useState(null);
 
   // Scoring state
@@ -166,6 +167,7 @@ const AdminScheduleCalendar = ({
   const [rescheduleMode, setRescheduleMode]       = useState(false);
   const [rescheduleConfirm, setRescheduleConfirm] = useState(null);   // { date, dateStr }
   const [confirmDelete, setConfirmDelete]         = useState(null);   // exam object
+  const [showUnconfirm, setShowUnconfirm]         = useState(false);  // unconfirm-schedule prompt
 
   // Term bounds
   const termStartLocal = term?.startDate ? localDate(term.startDate) : null;
@@ -387,10 +389,23 @@ const AdminScheduleCalendar = ({
     try {
       await confirmSchedule({ termId, phaseNumber, confirmedBy: 'admin' });
       const now = new Date().toISOString();
-      setExams(prev => prev.map(e => ({ ...e, confirmedAt: now })));
+      setExams(prev => prev.map(e => ({ ...e, confirmedAt: now, confirmedBy: 'admin', status: 'confirmed' })));
       toast.success('Schedule confirmed');
     } catch { toast.error('Failed to confirm schedule'); }
     finally { setConfirming(false); }
+  };
+
+  // Reverse of handleConfirm — unlocks the whole term+phase so exams can be moved.
+  // Clears all three fields the confirm writes: some components read confirmedAt
+  // (Dashboard) while others read status === 'confirmed' (BookingPage, DeptHead).
+  const handleUnconfirm = async () => {
+    setUnconfirming(true);
+    try {
+      await unconfirmSchedule({ termId, phaseNumber, unconfirmedBy: 'admin' });
+      setExams(prev => prev.map(e => ({ ...e, confirmedAt: null, confirmedBy: '', status: 'pending' })));
+      toast.success('Schedule unconfirmed');
+    } catch { toast.error('Failed to unconfirm schedule'); }
+    finally { setUnconfirming(false); setShowUnconfirm(false); }
   };
 
   // Chips
@@ -589,10 +604,24 @@ const AdminScheduleCalendar = ({
               VIEW ONLY
             </span>
           ) : (
-            <button className={`btn btn-sm ${isConfirmed ? 'btn-outline' : 'btn-primary'}`} onClick={handleConfirm} disabled={confirming || isConfirmed || exams.length === 0} style={{ gap: 6, whiteSpace: 'nowrap' }}>
-              <CheckCircle size={14} />
-              {confirming ? 'Confirming…' : isConfirmed ? 'Confirmed' : 'Confirm Schedule'}
-            </button>
+            <>
+              {/* Mirror of Confirm — enabled exactly when Confirm is disabled by isConfirmed.
+                  Must stay inside this !readOnly branch: isConfirmed is `readOnly || …`, so in a
+                  read-only mount it is always true and this button would render enabled. */}
+              <button
+                className="btn btn-sm"
+                style={{ color: '#dc2626', border: '1px solid #fecaca', background: 'color-mix(in srgb, #ef4444 6%, var(--clr-card))', fontWeight: 500, gap: 6, whiteSpace: 'nowrap' }}
+                onClick={() => setShowUnconfirm(true)}
+                disabled={unconfirming || !isConfirmed}
+              >
+                <RotateCcw size={14} />
+                {unconfirming ? 'Unconfirming…' : 'Unconfirm Schedule'}
+              </button>
+              <button className={`btn btn-sm ${isConfirmed ? 'btn-outline' : 'btn-primary'}`} onClick={handleConfirm} disabled={confirming || isConfirmed || exams.length === 0} style={{ gap: 6, whiteSpace: 'nowrap' }}>
+                <CheckCircle size={14} />
+                {confirming ? 'Confirming…' : isConfirmed ? 'Confirmed' : 'Confirm Schedule'}
+              </button>
+            </>
           ))}
         </div>
       </div>
@@ -970,6 +999,27 @@ const AdminScheduleCalendar = ({
               <button className="btn btn-outline btn-sm" onClick={() => setConfirmDelete(null)} disabled={saving}>Cancel</button>
               <button className="btn btn-sm" style={{ color: '#fff', background: '#dc2626', border: 'none', fontWeight: 500 }} onClick={handleConfirmDelete} disabled={saving}>
                 {saving ? 'Removing…' : 'Remove'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Unconfirm schedule dialog */}
+      {showUnconfirm && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={() => setShowUnconfirm(false)}>
+          <div style={{ background: 'var(--clr-card)', borderRadius: 12, padding: 24, width: 360, boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }} onClick={e => e.stopPropagation()}>
+            <h3 className="font-medium" style={{ marginBottom: 6 }}>Unconfirm Schedule</h3>
+            <p className="text-sm text-muted" style={{ marginBottom: 16 }}>
+              Unlock all <strong>{exams.length}</strong> exam{exams.length === 1 ? '' : 's'}
+              {term?.name ? ` for ${term.name}` : ''}
+              {phaseNumber !== undefined && phaseNumber !== null ? ` · Phase ${phaseNumber}` : ''}?
+              {' '}The schedule returns to pending everywhere and exams become editable again.
+            </p>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="btn btn-outline btn-sm" onClick={() => setShowUnconfirm(false)} disabled={unconfirming}>Cancel</button>
+              <button className="btn btn-sm" style={{ color: '#fff', background: '#dc2626', border: 'none', fontWeight: 500 }} onClick={handleUnconfirm} disabled={unconfirming}>
+                {unconfirming ? 'Unconfirming…' : 'Unconfirm'}
               </button>
             </div>
           </div>

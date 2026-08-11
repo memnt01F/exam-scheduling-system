@@ -6,6 +6,7 @@
  *
  * GET  /            — list bookings (see query params below)
  * POST /confirm     — confirm all algorithm exams for a term+phase
+ * POST /unconfirm   — reverse /confirm for a term+phase (unlock the schedule)
  * POST /bulk        — bulk-insert algorithm exams (replaces previous for that term+phase)
  * POST /            — create a Phase 2 manual booking
  * PUT  /:id         — edit a booking (algorithm or Phase 2, with appropriate validation)
@@ -90,7 +91,68 @@ router.post("/confirm", async (req, res) => {
       );
     }
 
+    await AuditLog.create({
+      action: "CONFIRM_SCHEDULE",
+      user: confirmedBy || "admin",
+      role: "admin",
+      details: `Confirmed ${result.modifiedCount} exam${result.modifiedCount === 1 ? "" : "s"} for phase ${phaseNum}`,
+      metadata: { termId, phaseNumber: phaseNum, confirmed: result.modifiedCount, courses: courseCodes.length },
+    });
+
     res.json({ confirmed: result.modifiedCount });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+/**
+ * POST /api/bookings/unconfirm — reverse of /confirm for a term + phase.
+ * Clears confirmedAt / confirmedBy, returns status → 'pending', and rolls
+ * matching CoursePreference records back 'scheduled' → 'submitted'.
+ *
+ * The filter is keyed on status "confirmed", never on confirmedAt: cancelled
+ * bookings keep their confirmedAt (neither DELETE /:id nor POST /bulk clears
+ * it), so matching on confirmedAt would flip deleted exams back to "pending"
+ * and resurrect them into every calendar via GET /.
+ */
+router.post("/unconfirm", async (req, res) => {
+  try {
+    const { termId, phaseNumber, unconfirmedBy } = req.body || {};
+    if (!termId || phaseNumber === undefined || phaseNumber === null) {
+      return res.status(400).json({ message: "termId and phaseNumber are required" });
+    }
+    const phaseNum = Number(phaseNumber);
+
+    // Capture course codes while the bookings are still marked confirmed.
+    const wasConfirmed = await Booking.find({
+      termId, phaseNumber: phaseNum, status: "confirmed",
+    }).select("courseCode");
+    const courseCodes = [...new Set(wasConfirmed.map((b) => b.courseCode))];
+
+    const result = await Booking.updateMany(
+      { termId, phaseNumber: phaseNum, status: "confirmed" },
+      { $set: { confirmedAt: null, confirmedBy: "", status: "pending" } }
+    );
+
+    // Roll matching CoursePreference records back to 'submitted'
+    let preferencesReverted = 0;
+    if (courseCodes.length > 0) {
+      const prefResult = await CoursePreference.updateMany(
+        { termId, courseCode: { $in: courseCodes }, status: "scheduled" },
+        { $set: { status: "submitted" } }
+      );
+      preferencesReverted = prefResult.modifiedCount;
+    }
+
+    await AuditLog.create({
+      action: "UNCONFIRM_SCHEDULE",
+      user: unconfirmedBy || "admin",
+      role: "admin",
+      details: `Unconfirmed ${result.modifiedCount} exam${result.modifiedCount === 1 ? "" : "s"} for phase ${phaseNum}`,
+      metadata: { termId, phaseNumber: phaseNum, unconfirmed: result.modifiedCount, preferencesReverted },
+    });
+
+    res.json({ unconfirmed: result.modifiedCount, preferencesReverted });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
