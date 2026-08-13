@@ -277,6 +277,7 @@ const BookingPage = () => {
               onDaySelected={handleSelectDate}
               onScoresReady={setTopDays}
               selectedDateOverride={selectedDate}
+              hideTopDaysPanel
             />
           </div>
 
@@ -313,36 +314,42 @@ const BookingPage = () => {
               </div>
             </div>
 
-            {/* Proctor Requirements */}
-            <div className="card">
-              <div className="card-header">
-                <div className="card-title"><Users size={16} /> Proctor Requirements</div>
+            {/* Top Recommended Days */}
+            <div className="card" style={{ overflow: 'hidden' }}>
+              <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--clr-border)' }}>
+                <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--clr-muted)' }}>
+                  Top Recommended Days
+                </p>
               </div>
-              <div className="card-content">
-                <div className="form-group">
-                  <label className="form-label" htmlFor="male">Male Proctors Required</label>
-                  <input
-                    id="male"
-                    className="form-input"
-                    type="number"
-                    min="0"
-                    placeholder="0"
-                    value={maleProctors}
-                    onChange={(e) => setMaleProctors(e.target.value)}
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label" htmlFor="female">Female Proctors Required</label>
-                  <input
-                    id="female"
-                    className="form-input"
-                    type="number"
-                    min="0"
-                    placeholder="0"
-                    value={femaleProctors}
-                    onChange={(e) => setFemaleProctors(e.target.value)}
-                  />
-                </div>
+              <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {topDays.length === 0 ? (
+                  <p style={{ fontSize: 12, color: 'var(--clr-muted)' }}>Scores will appear once you open the calendar.</p>
+                ) : topDays.map((d, idx) => {
+                  const day = new Date(d.dateStr + 'T00:00:00');
+                  const hue = Math.round(50 + d.score * 70);
+                  const l   = Math.round(62 - d.score * 26);
+                  const color = `hsl(${hue},72%,${l}%)`;
+                  const label = d.score >= 0.7 ? 'Best' : d.score >= 0.4 ? 'Good' : 'Acceptable';
+                  const isActive = selectedDate === d.dateStr;
+                  return (
+                    <div key={d.dateStr} onClick={() => handleSelectDate(d.dateStr)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, border: isActive ? '2px solid var(--clr-primary)' : '1px solid var(--clr-border)', background: isActive ? 'color-mix(in srgb, var(--clr-primary) 8%, var(--clr-card))' : 'var(--clr-card)', transition: 'background 0.1s', cursor: 'pointer' }}>
+                      <span style={{ width: 22, height: 22, borderRadius: '50%', background: color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{idx + 1}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'baseline', gap: 4 }}>
+                          <span>{day.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                          <span style={{ color: 'var(--clr-muted)', fontWeight: 400, fontSize: 11 }}>{day.toLocaleDateString('en-US', { weekday: 'short' })}</span>
+                          <span style={{ fontSize: 10, fontWeight: 500, padding: '1px 5px', borderRadius: 4, background: `hsla(${hue},72%,${l}%,0.15)`, color }}>{label}</span>
+                        </div>
+                        {d.courses?.length > 0 && (
+                          <div style={{ fontSize: 10, color: 'var(--clr-muted)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {d.courses.join(', ')}
+                          </div>
+                        )}
+                      </div>
+                      <span style={{ fontSize: 13, fontWeight: 700, color, flexShrink: 0 }}>{d.score.toFixed(2)}</span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
@@ -369,18 +376,10 @@ const BookingPage = () => {
                       {selectedWeekDay ? `Week ${selectedWeekDay.week}, Day ${selectedWeekDay.day}` : '—'}
                     </span>
                   </div>
-                  <div className="summary-row">
-                    <span className="summary-label">Male Proctors</span>
-                    <span className="summary-value">{maleProctors || '—'}</span>
-                  </div>
-                  <div className="summary-row">
-                    <span className="summary-label">Female Proctors</span>
-                    <span className="summary-value">{femaleProctors || '—'}</span>
-                  </div>
                 </div>
                 <button
                   className="btn btn-primary btn-block mt-4"
-                  disabled={!selectedDate || !examType || !maleProctors || !femaleProctors}
+                  disabled={!selectedDate || !examType}
                   onClick={handleSubmit}
                 >
                   Confirm Booking

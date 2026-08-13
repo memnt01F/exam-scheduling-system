@@ -149,6 +149,7 @@ const AdminScheduleCalendar = ({
   onDaySelected = null,      // (dateStr) => void — called when a day is clicked in booking mode
   onScoresReady = null,      // ([{ dateStr, score, courses }]) => void — parent receives top days
   selectedDateOverride = null, // dateStr — lets parent push a visual selection into booking mode
+  hideTopDaysPanel = false,  // suppress the left TOP RECOMMENDED DAYS panel (parent handles display)
 }) => {
   const [exams, setExams]           = useState(initialExams || []);
   const [viewMode, setViewMode]     = useState('month');
@@ -632,7 +633,7 @@ const AdminScheduleCalendar = ({
         <div style={{ display: 'flex' }}>
 
           {/* Left: top recommended days — shown when exam selected + scores loaded, or in booking mode */}
-          {dayScores && !rescheduleMode && showTopDays && (bookingMode || selectedExam) && (
+          {dayScores && !rescheduleMode && showTopDays && !hideTopDaysPanel && (bookingMode || selectedExam) && (
             <div style={{ width: 240, flexShrink: 0, borderRight: '1px solid var(--clr-border)', display: 'flex', flexDirection: 'column' }}>
               <TopDaysPanel
                 dayScores={dayScores}
@@ -728,6 +729,7 @@ const AdminScheduleCalendar = ({
                             borderRight: di < 6 ? '1px solid var(--clr-border)' : 'none',
                             background: cellBg,
                             position: 'relative',
+                            overflow: 'hidden',
                             cursor: !day ? 'default' : (rescheduleMode && ss?.clickable) ? 'copy' : (bookingMode && !bookable) ? 'default' : 'pointer',
                             outline: cellOutline,
                             outlineOffset: -2,
