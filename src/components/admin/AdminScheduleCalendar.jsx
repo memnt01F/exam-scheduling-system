@@ -343,10 +343,9 @@ const AdminScheduleCalendar = ({
     if (!day) return;
 
     if (bookingMode) {
-      if (!isBookableDay(day)) return;
       const dateStr = toDateStr(day);
       setSelectedDay(prev => prev && toDateStr(prev) === dateStr ? null : day);
-      onDaySelected?.(dateStr);
+      if (isBookableDay(day)) onDaySelected?.(dateStr);
       return;
     }
 
@@ -886,7 +885,7 @@ const AdminScheduleCalendar = ({
           </div>
 
           {/* Right: day detail panel — hidden during reschedule mode */}
-          {selectedDay && !rescheduleMode && !bookingMode && (
+          {selectedDay && !rescheduleMode && (
             <div style={{ width: 256, flexShrink: 0, borderLeft: '1px solid var(--clr-border)', display: 'flex', flexDirection: 'column' }}>
               <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--clr-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div>
