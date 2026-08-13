@@ -116,13 +116,13 @@ const BookingPage = () => {
       const d = getSlotDate(booking.week, booking.day);
       setSelectedDate(d ? toDateStr(d) : null);
       setSelectedWeekDay({ week: booking.week, day: booking.day });
-      setMaleProctors(booking.maleProctors?.toString() || '');
-      setFemaleProctors(booking.femaleProctors?.toString() || '');
+      setMaleProctors(booking.maleProctors?.toString() || '0');
+      setFemaleProctors(booking.femaleProctors?.toString() || '0');
     } else {
       setSelectedDate(null);
       setSelectedWeekDay(null);
-      setMaleProctors('');
-      setFemaleProctors('');
+      setMaleProctors('0');
+      setFemaleProctors('0');
     }
   };
 
@@ -150,14 +150,6 @@ const BookingPage = () => {
 
   const handleSubmit = () => {
     if (!selectedDate || !examType) return;
-    if (!maleProctors || !femaleProctors) {
-      toast.error('Please provide both male and female proctor counts.');
-      return;
-    }
-    if (parseInt(maleProctors) < 0 || parseInt(femaleProctors) < 0) {
-      toast.error('Proctor counts must be valid positive integers.');
-      return;
-    }
     setShowConfirm(true);
   };
 
@@ -177,8 +169,8 @@ const BookingPage = () => {
           courseCode: course.code,
           examType,
           examDate: selectedDate,
-          maleProctors: parseInt(maleProctors),
-          femaleProctors: parseInt(femaleProctors),
+          maleProctors: parseInt(maleProctors) || 0,
+          femaleProctors: parseInt(femaleProctors) || 0,
           level: course.level,
           termId: termIdParam || null,
           phaseNumber: 2,
@@ -222,8 +214,8 @@ const BookingPage = () => {
           week: selectedWeekDay.week,
           day: selectedWeekDay.day,
           examDate: selectedDate,
-          maleProctors: parseInt(maleProctors),
-          femaleProctors: parseInt(femaleProctors),
+          maleProctors: parseInt(maleProctors) || 0,
+          femaleProctors: parseInt(femaleProctors) || 0,
           userName: user?.name || 'Unknown',
           role: fromAdmin ? 'admin' : 'coordinator',
         })
@@ -234,8 +226,8 @@ const BookingPage = () => {
           day: selectedWeekDay.day,
           examDate: selectedDate,
           termId: termIdParam || undefined,
-          maleProctors: parseInt(maleProctors),
-          femaleProctors: parseInt(femaleProctors),
+          maleProctors: parseInt(maleProctors) || 0,
+          femaleProctors: parseInt(femaleProctors) || 0,
           userName: user?.name || 'Unknown',
         });
     if (!result?.success) return;
