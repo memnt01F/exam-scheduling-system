@@ -79,6 +79,7 @@ const SchedulingManagement = ({ restrictedDepts }) => {
   const [showPreferencesView, setShowPreferencesView]   = useState(false);
   const [showScheduleCalendar, setShowScheduleCalendar] = useState(false);
   const [scheduledExams, setScheduledExams]             = useState([]);
+  const [phase0Exams, setPhase0Exams]                   = useState([]);
   const [enrollmentStats, setEnrollmentStats]           = useState([]);
   const [generating, setGenerating]                     = useState(false);
   const [genError, setGenError]                         = useState(null);
@@ -121,6 +122,14 @@ const SchedulingManagement = ({ restrictedDepts }) => {
     getScheduledExams({ termId: selectedTermId, phase: selectedPhaseNum })
       .then(data => setScheduledExams(Array.isArray(data) ? data : []))
       .catch(() => setScheduledExams([]));
+  }, [selectedTermId, selectedPhaseNum]);
+
+  /* when viewing Phase 1, also load Phase 0 exams to show on the calendar */
+  useEffect(() => {
+    if (!selectedTermId || selectedPhaseNum !== 1) { setPhase0Exams([]); return; }
+    getScheduledExams({ termId: selectedTermId, phase: 0 })
+      .then(data => setPhase0Exams(Array.isArray(data) ? data : []))
+      .catch(() => setPhase0Exams([]));
   }, [selectedTermId, selectedPhaseNum]);
 
   /* close reminder dropdown on outside click */
@@ -260,7 +269,7 @@ const SchedulingManagement = ({ restrictedDepts }) => {
   if (showScheduleCalendar) {
     return (
       <AdminScheduleCalendar
-        exams={scheduledExams}
+        exams={[...phase0Exams, ...scheduledExams]}
         termId={selectedTermId}
         phaseNumber={selectedPhaseNum}
         term={selectedTerm}

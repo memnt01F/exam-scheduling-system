@@ -9,10 +9,10 @@ const MAX_CHIPS = 3;
 const fmtCode = (code) => String(code).replace(/\(FINALPROGRAMMING\)/gi, '(lab)');
 
 const EXAM_TYPE_COLOR = {
-  'Major 1': '#14532d',
-  'Major 2': '#166534',
-  'Major 3': '#1a7a4c',
-  'Mid':     '#16a34a',
+  'Major 1': '#009767',
+  'Major 2': '#009767',
+  'Major 3': '#009767',
+  'Mid':     '#F0BA4F',
 };
 const examColor = (examType) => EXAM_TYPE_COLOR[examType] || '#1a7a4c';
 
@@ -419,7 +419,7 @@ const AdminScheduleCalendar = ({
     <div
       title={`${booking.courseCode} — ${booking.examType} (Phase 2 booking)`}
       style={{
-        background: 'var(--clr-surface)', border: '1px solid var(--clr-border)', color: 'var(--clr-text)',
+        background: examColor(booking.examType), border: '2px solid transparent', color: '#fff',
         borderRadius: 3, padding: '2px 7px', fontSize: 11, fontWeight: 500,
         cursor: 'default', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 2,
       }}
@@ -452,14 +452,14 @@ const AdminScheduleCalendar = ({
   const BookingPanelRow = ({ booking }) => (
     <div
       style={{
-        background: 'var(--clr-surface)', border: '1px solid var(--clr-border)', color: 'var(--clr-text)',
+        background: examColor(booking.examType), border: '2px solid transparent', color: '#fff',
         borderRadius: 6, padding: '8px 12px', marginBottom: 6,
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         cursor: 'default', fontSize: 12, fontWeight: 500,
       }}
     >
       <span style={{ fontWeight: 600 }}>{booking.courseCode}</span>
-      <span style={{ opacity: 0.6, fontSize: 11 }}>{booking.examType}</span>
+      <span style={{ opacity: 0.85, fontSize: 11 }}>{booking.examType}</span>
     </div>
   );
 
