@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout.jsx';
 import { useCourses } from '../context/CoursesContext.jsx';
-import { departments } from '../lib/mock-admin-data.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import {
   Users, Settings, Database, ClipboardList, BookOpen, Trash2, Plus, X, Pencil, Upload, FileSpreadsheet, RefreshCw, Calendar, UserCheck, Check,

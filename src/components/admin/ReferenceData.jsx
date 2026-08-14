@@ -1,7 +1,6 @@
 import { useState, useRef, useMemo, useEffect } from 'react';
 import { useCourses } from '../../context/CoursesContext.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
-import { departments } from '../../lib/mock-admin-data.js';
 import {
   Database, Search, Trash2, Plus, Upload, X, AlertTriangle, CheckCircle2, FileSpreadsheet, Pencil,
   RefreshCw, ArrowDownToLine,
@@ -225,7 +224,7 @@ const ReferenceData = () => {
   useEffect(() => { setPage(1); }, [search, filterLevel, filterDept]);
 
   const allDepts = useMemo(
-    () => [...new Set([...departments, ...courses.map(c => c.department)])].filter(Boolean).sort(),
+    () => [...new Set(courses.map(c => c.department).filter(Boolean))].sort(),
     [courses]
   );
 

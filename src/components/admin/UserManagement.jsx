@@ -1,5 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
-import { departments } from '../../lib/mock-admin-data.js';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { useCourses } from '../../context/CoursesContext.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { getAssignments, bulkSaveAssignments } from '../../services/api.js';
@@ -18,6 +17,11 @@ const UserManagement = () => {
   const fileInputRef = useRef(null);
   const { user: currentUser } = useAuth();
   const adminName = currentUser?.name || 'Admin';
+
+  const departments = useMemo(
+    () => [...new Set(courses.map(c => c.department).filter(Boolean))].sort(),
+    [courses]
+  );
 
   const filtered = users.filter(u =>
     u.name.toLowerCase().includes(search.toLowerCase()) ||
