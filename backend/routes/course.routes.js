@@ -2,10 +2,18 @@
  * Course routes — CRUD with audit logging.
  *
  * DELETE is soft (status=inactive) unless ?hard=true.
+ *
+ * Laboratories are ordinary courses whose code ends in _LAB (ICS108_LAB).
+ * Nothing about the schema or the payload differs; POST simply notices the
+ * suffix and copies the parent's enrollment roster afterwards, because a lab
+ * never appears in the registrar's enrollment file. See utils/labCode.js.
  */
 const express = require("express");
 const Course = require("../models/course.model");
 const AuditLog = require("../models/auditLog.model");
+const { isLabCode, parentCodeOf } = require("../utils/labCode");
+const { syncLabEnrollments, activeAndUpcomingTerms } = require("../services/labEnrollmentService");
+const { rebuildCourseConflicts } = require("../services/conflictsService");
 
 const router = express.Router();
 
@@ -41,15 +49,46 @@ router.post("/", async (req, res) => {
       status: status || "active",
     });
 
+    // A lab starts life with no enrollments of its own — copy the parent's
+    // roster into every active/upcoming term, then refresh the conflict cache
+    // so the new rows are visible to the day-score heatmap.
+    let labSync = null;
+    let conflictsRebuilt = null;
+    if (isLabCode(normalized)) {
+      const terms = await activeAndUpcomingTerms();
+      labSync = [];
+      conflictsRebuilt = [];
+      for (const term of terms) {
+        try {
+          const report = await syncLabEnrollments({ termId: term._id, labCodes: [normalized] });
+          labSync.push(...report.map(r => ({ ...r, termId: term._id, termName: term.name })));
+        } catch (err) {
+          labSync.push({ labCode: normalized, parentCode: parentCodeOf(normalized), copied: 0,
+            parentRows: 0, termId: term._id, termName: term.name, skipped: err.message });
+          continue;
+        }
+        // Best effort: a scheduler that is down must not fail course creation.
+        const rebuilt = await rebuildCourseConflicts(String(term._id));
+        conflictsRebuilt.push({ termId: term._id, termName: term.name, ok: rebuilt.ok, message: rebuilt.message });
+      }
+    }
+
+    const copiedTotal = labSync ? labSync.reduce((sum, l) => sum + l.copied, 0) : 0;
+
     await AuditLog.create({
-      action: "CREATE_COURSE",
+      action: isLabCode(normalized) ? "CREATE_LAB_COURSE" : "CREATE_COURSE",
       user: createdBy || "admin",
       role: "admin",
       courseCode: normalized,
-      details: `Created course ${normalized} — ${name} (L${level})`,
+      details: isLabCode(normalized)
+        ? `Created lab course ${normalized} for ${parentCodeOf(normalized)} — ${name} (L${level}); copied ${copiedTotal} enrollment(s)`
+        : `Created course ${normalized} — ${name} (L${level})`,
+      metadata: labSync ? { labSync, conflictsRebuilt } : undefined,
     });
 
-    res.status(201).json(course);
+    // Extra fields are additive — normalizeServerCourse on the client reads
+    // named fields only, so this stays backward compatible.
+    res.status(201).json(labSync ? { ...course.toObject(), labSync, conflictsRebuilt } : course);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

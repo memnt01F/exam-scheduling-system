@@ -173,15 +173,50 @@ const SystemSettings = () => {
     doEnrollmentUpload(termId, file);
   };
 
+  /**
+   * Upload replaces every enrollment row for the term, which also wipes the
+   * copied rosters of any lab course. The backend re-copies them from their
+   * parent and rebuilds the conflict cache as part of the same request; this
+   * reports both, because a lab left with no students is silently dropped from
+   * the generated schedule with only a solver warning to show for it.
+   */
   const doEnrollmentUpload = async (termId, file) => {
     setUploading(true);
     try {
       const result = await uploadEnrollments(termId, file, user?.name || 'admin');
       const skippedNote = result.skipped > 0 ? ` (${result.skipped.toLocaleString()} rows skipped — missing ID or course code)` : '';
       toast.success(`${result.inserted.toLocaleString()} enrollments uploaded for ${result.termName}${skippedNote}`);
-      await rebuildConflicts(termId).catch(() => {
-        toast.warning('Enrollments saved but conflict cache could not be rebuilt — day scores may be stale.');
-      });
+
+      // Lab enrollment sync
+      const labSync = Array.isArray(result.labSync) ? result.labSync : [];
+      const labsSkipped = labSync.filter(l => l.skipped);
+      if (labSync.length > 0) {
+        const copied = labSync.reduce((sum, l) => sum + (l.copied || 0), 0);
+        if (labsSkipped.length > 0) {
+          toast.warning(`${labsSkipped.length} lab course(s) got no enrollment data`, {
+            description: labsSkipped.map(l => `${l.labCode}: ${l.skipped}`).join(' · '),
+          });
+        }
+        if (copied > 0) {
+          toast.success(`${copied.toLocaleString()} lab enrollment(s) synced across ${labSync.length - labsSkipped.length} lab course(s)`);
+        }
+      }
+      if (result.labSyncError) {
+        toast.error(`Lab enrollment sync failed: ${result.labSyncError}`);
+      }
+
+      // The backend rebuilds the conflict cache inline. Retry once from here if
+      // that failed — the scheduler on Render can take ~30s to wake from idle.
+      if (result.conflictsRebuilt && !result.conflictsRebuilt.ok) {
+        try {
+          await rebuildConflicts(termId);
+        } catch (err) {
+          toast.warning('Enrollments saved, but the conflict cache could not be rebuilt — day scores may be stale.', {
+            description: err.data?.message || result.conflictsRebuilt.message || err.message,
+          });
+        }
+      }
+
       const data = await getEnrollmentStats();
       setEnrollmentStats(data.stats || []);
     } catch (err) {
@@ -704,6 +739,7 @@ const AuditLogs = () => {
     user_deleted: 'User Deleted',
     user_created: 'User Created',
     course_created: 'Course Created',
+    lab_course_created: 'Lab Course Created',
     course_updated: 'Course Updated',
     course_deleted: 'Course Deleted',
     term_created: 'Term Created',

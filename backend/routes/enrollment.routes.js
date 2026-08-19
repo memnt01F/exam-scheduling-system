@@ -10,7 +10,10 @@
  *   File:    file (.xlsx / .xls)
  *   Masks student IDs with SHA-256 (truncated to 7 digits) before storage.
  *   Replaces all existing enrollments for the given term.
- *   Response: { termName, termId, inserted, replaced }
+ *   Lab courses (code ending in _LAB) never appear in the file, so their
+ *   rosters are re-copied from their parent course afterwards and the
+ *   conflict cache is rebuilt.
+ *   Response: { termName, termId, inserted, replaced, labSync, conflictsRebuilt }
  */
 
 const express = require('express');
@@ -20,6 +23,8 @@ const AcademicTerm = require('../models/academicTerm.model');
 const Enrollment   = require('../models/enrollment.model');
 const AuditLog     = require('../models/auditLog.model');
 const { hashStudentId } = require('../utils/hashStudentId');
+const { syncLabEnrollments } = require('../services/labEnrollmentService');
+const { rebuildCourseConflicts } = require('../services/conflictsService');
 
 const router = express.Router();
 const upload = multer({
@@ -133,19 +138,50 @@ router.post('/upload', upload.single('file'), async (req, res) => {
   const BATCH = 5000;
   let inserted = 0;
   for (let i = 0; i < docs.length; i += BATCH) {
-    await Enrollment.insertMany(docs.slice(i, i + BATCH), { ordered: false });
-    inserted += Math.min(BATCH, docs.length - i);
+    // Count what actually landed, not what was attempted — with ordered:false a
+    // partially-failed batch would otherwise be reported as a full success.
+    const written = await Enrollment.insertMany(docs.slice(i, i + BATCH), { ordered: false });
+    inserted += written.length;
   }
+
+  // The deleteMany above wiped every lab roster too, so the copy has to run
+  // after the insert. Failures are reported, never fatal — the uploaded
+  // enrollments are already saved by this point.
+  let labSync = [];
+  let labSyncError = null;
+  try {
+    labSync = await syncLabEnrollments({ termId: term._id });
+  } catch (err) {
+    labSyncError = err.message;
+  }
+
+  // Rebuild the courseconflicts cache: enrollments just changed, and nothing
+  // else refreshes it (the scheduler only auto-builds when a term has none).
+  const conflictsRebuilt = await rebuildCourseConflicts(String(term._id));
+
+  const labsCopied = labSync.reduce((sum, l) => sum + l.copied, 0);
+  const labsSkipped = labSync.filter(l => l.skipped);
 
   await AuditLog.create({
     action: 'ENROLLMENT_UPLOAD',
     user: importedBy || 'admin',
     role: 'admin',
-    details: `Uploaded ${inserted} enrollments for ${term.name}${replaced > 0 ? ` (replaced ${replaced} existing)` : ''}`,
-    metadata: { termId: term._id, termName: term.name, inserted, replaced },
+    details: `Uploaded ${inserted} enrollments for ${term.name}`
+      + `${replaced > 0 ? ` (replaced ${replaced} existing)` : ''}`
+      + `${labSync.length ? `; synced ${labsCopied} lab enrollment(s) across ${labSync.length} lab course(s)` : ''}`
+      + `${labsSkipped.length ? `; ${labsSkipped.length} lab(s) skipped` : ''}`,
+    metadata: {
+      termId: term._id, termName: term.name, inserted, replaced,
+      labSync, labSyncError,
+      conflictsRebuilt: { ok: conflictsRebuilt.ok, message: conflictsRebuilt.message },
+    },
   });
 
-  return res.json({ termName: term.name, termId: term._id, inserted, replaced, skipped, total: rows.length });
+  return res.json({
+    termName: term.name, termId: term._id, inserted, replaced, skipped, total: rows.length,
+    labSync, labSyncError,
+    conflictsRebuilt: { ok: conflictsRebuilt.ok, message: conflictsRebuilt.message },
+  });
 });
 
 module.exports = router;

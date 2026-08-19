@@ -16,6 +16,7 @@ const enrollmentRoutes = require("./routes/enrollment.routes");
 const courseAssignmentRoutes = require("./routes/courseAssignment.routes");
 const scheduleRoutes = require("./routes/schedule.routes");
 const examGroupRoutes = require("./routes/examGroup.routes");
+const conflictRoutes = require("./routes/conflicts.routes");
 
 const app = express();
 app.use(cors({
@@ -40,6 +41,7 @@ app.use("/api/enrollments", enrollmentRoutes);
 app.use("/api/course-assignments", courseAssignmentRoutes);
 app.use("/api/schedule", scheduleRoutes);
 app.use("/api/exam-groups", examGroupRoutes);
+app.use("/api/conflicts", conflictRoutes);
 
 const PORT = process.env.PORT || 5000;
 

@@ -147,6 +147,7 @@ export const CoursesProvider = ({ children }) => {
     UPDATE_USER: 'user_role_changed',
     DELETE_USER: 'user_deleted',
     CREATE_COURSE: 'course_created',
+    CREATE_LAB_COURSE: 'lab_course_created',
     UPDATE_COURSE: 'course_updated',
     DELETE_COURSE: 'course_deleted',
     CREATE_TERM: 'term_created',
@@ -697,10 +698,18 @@ export const CoursesProvider = ({ children }) => {
 
   /**
    * Add a course. Tries backend first; falls back to local-only on failure.
+   *
+   * A real HTTP error (409 duplicate code, 400 validation) rolls the optimistic
+   * row back and returns success:false so the caller can surface it. Only a
+   * network failure — err.status undefined — keeps the local-only row, matching
+   * the offline behaviour of bookCourse above. Previously every error returned
+   * success:true, so a rejected create still toasted "Course added successfully"
+   * and left a phantom row in the table.
    */
   const addCourse = useCallback(async (course, createdBy) => {
     // Local-first apply so the UI feels instant.
-    setCourses(prev => [...prev, { ...course, bookings: course.bookings || {} }]);
+    const optimistic = { ...course, bookings: course.bookings || {} };
+    setCourses(prev => [...prev, optimistic]);
     if (!backendOnline) return { success: true, offline: true };
     try {
       const created = await createCourseApi({
@@ -720,6 +729,16 @@ export const CoursesProvider = ({ children }) => {
       return { success: true, course: created };
     } catch (err) {
       console.warn('[courses] create failed:', err.message);
+      // Backend answered with an error — the course was NOT created.
+      if (err.status !== undefined) {
+        setCourses(prev => prev.filter(c => c !== optimistic));
+        return {
+          success: false,
+          message: err.data?.message || err.message || 'Failed to add course',
+          status: err.status,
+        };
+      }
+      // Unreachable backend — keep the local row so the UI still works offline.
       return { success: true, offline: true };
     }
   }, [backendOnline, normalizeServerCourse]);

@@ -4,10 +4,11 @@ import { useAuth } from '../../context/AuthContext.jsx';
 import { departments } from '../../lib/mock-admin-data.js';
 import {
   Database, Search, Trash2, Plus, Upload, X, AlertTriangle, CheckCircle2, FileSpreadsheet, Pencil,
-  RefreshCw, ArrowDownToLine,
+  RefreshCw, ArrowDownToLine, Beaker, BookOpen,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { importCourseOfferings } from '../../services/api.js';
+import { isLabCode, labCodeFor, labNameFor, parentCodeOf } from '../../lib/labCode.js';
 
 // ─── Level 1 course list (from requirements) ─────────────────────────────────
 // These courses are always Level 1 regardless of their course number.
@@ -206,6 +207,7 @@ const ReferenceData = () => {
   const [search, setSearch] = useState('');
   const [filterLevel, setFilterLevel] = useState('all');
   const [filterDept, setFilterDept] = useState('all');
+  const [filterType, setFilterType] = useState('all'); // all | lecture | lab
   const [page, setPage] = useState(1);
   const [showAddModal, setShowAddModal] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
@@ -222,7 +224,7 @@ const ReferenceData = () => {
   }, [searchInput]);
 
   // Reset to page 1 whenever filters change
-  useEffect(() => { setPage(1); }, [search, filterLevel, filterDept]);
+  useEffect(() => { setPage(1); }, [search, filterLevel, filterDept, filterType]);
 
   const allDepts = useMemo(
     () => [...new Set([...departments, ...courses.map(c => c.department)])].filter(Boolean).sort(),
@@ -237,13 +239,14 @@ const ReferenceData = () => {
   const filtered = useMemo(() => courses.filter(c => {
     if (filterLevel !== 'all' && c.level !== parseInt(filterLevel)) return false;
     if (filterDept !== 'all' && c.department !== filterDept) return false;
+    if (filterType !== 'all' && (filterType === 'lab') !== isLabCode(c.code)) return false;
     if (search) {
       const q = search.toLowerCase().replace(/\s+/g, '');
       const codeNorm = c.code.toLowerCase().replace(/\s+/g, '');
       if (!codeNorm.includes(q) && !c.name.toLowerCase().includes(search.toLowerCase())) return false;
     }
     return true;
-  }), [courses, filterLevel, filterDept, search]);
+  }), [courses, filterLevel, filterDept, filterType, search]);
 
   const PAGE_SIZE = 25;
   const pageCount = Math.ceil(filtered.length / PAGE_SIZE);
@@ -256,6 +259,59 @@ const ReferenceData = () => {
     await removeCourse(id, adminName);
     setConfirmDelete(null);
     toast.success('Course deleted successfully');
+  };
+
+  /**
+   * Create a course (lecture or lab) and report what actually happened.
+   * Returns false so the modal can stay open when the backend rejects it.
+   *
+   * For a lab, the backend also copies the parent's enrollment roster into
+   * every active/upcoming term and rebuilds the conflict cache; those results
+   * come back on the response so any skipped term is surfaced rather than
+   * silently leaving the lab with no students.
+   */
+  const handleAddCourse = async (course) => {
+    const result = await addCourse(course, adminName);
+
+    if (result?.success === false) {
+      toast.error(result.message || 'Failed to add course');
+      return false;
+    }
+
+    setShowAddModal(false);
+
+    if (result?.offline) {
+      toast.warning(`${course.code} added locally — the backend is offline, so it was not saved.`);
+      return true;
+    }
+
+    const labSync = result?.course?.labSync;
+    if (Array.isArray(labSync) && labSync.length > 0) {
+      const copied = labSync.reduce((sum, l) => sum + (l.copied || 0), 0);
+      const skipped = labSync.filter(l => l.skipped);
+      const terms = labSync.filter(l => (l.copied || 0) > 0).map(l => l.termName).join(', ');
+
+      if (copied > 0) {
+        toast.success(`${course.code} created`, {
+          description: `${copied.toLocaleString()} enrollment(s) copied from ${parentCodeOf(course.code)}${terms ? ` — term ${terms}` : ''}.`,
+        });
+      } else {
+        toast.warning(`${course.code} created, but no enrollments were copied`, {
+          description: skipped.length
+            ? skipped[0].skipped
+            : `${parentCodeOf(course.code)} has no enrollment data yet. Upload enrollments, then the lab will be filled automatically.`,
+        });
+      }
+
+      const failedRebuild = (result?.course?.conflictsRebuilt || []).filter(r => !r.ok);
+      if (failedRebuild.length > 0) {
+        toast.warning('Conflict cache was not rebuilt', { description: failedRebuild[0].message });
+      }
+      return true;
+    }
+
+    toast.success('Course added successfully');
+    return true;
   };
 
   const handleSaveLevel = async (newLevel) => {
@@ -326,8 +382,11 @@ const ReferenceData = () => {
     let failed = 0;
     for (const c of toImport) {
       try {
-        await addCourse({ ...c, id: `imported-${Date.now()}-${count}`, bookings: {} }, adminName);
-        count++;
+        // addCourse resolves with success:false on a backend rejection rather
+        // than throwing, so check the result instead of relying on catch.
+        const result = await addCourse({ ...c, id: `imported-${Date.now()}-${count}`, bookings: {} }, adminName);
+        if (result?.success === false) failed++;
+        else count++;
       } catch {
         failed++;
       }
@@ -363,6 +422,11 @@ const ReferenceData = () => {
           <option value="all">All Departments</option>
           {allDepts.map(d => <option key={d} value={d}>{d}</option>)}
         </select>
+        <select className="form-input" style={{ width: 'auto', minWidth: 130 }} value={filterType} onChange={e => setFilterType(e.target.value)}>
+          <option value="all">All Types</option>
+          <option value="lecture">Lectures</option>
+          <option value="lab">Laboratories</option>
+        </select>
         <button className="btn btn-primary btn-sm" onClick={() => setShowAddModal(true)}>
           <Plus size={14} /> Add Course
         </button>
@@ -389,7 +453,16 @@ const ReferenceData = () => {
             <tbody>
               {paginated.map(c => (
                 <tr key={c.id}>
-                  <td className="font-medium">{c.code}</td>
+                  <td className="font-medium">
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      {c.code}
+                      {isLabCode(c.code) && (
+                        <span className="badge badge-secondary" style={{ fontSize: 10 }} title={`Laboratory for ${parentCodeOf(c.code)}`}>
+                          LAB
+                        </span>
+                      )}
+                    </span>
+                  </td>
                   <td>{c.name}</td>
                   <td style={{ textAlign: 'center' }}><span className={`badge badge-level-${c.level}`}>L{c.level}</span></td>
                   <td className="text-sm">{c.department}</td>
@@ -449,8 +522,10 @@ const ReferenceData = () => {
       {showAddModal && (
         <AddCourseModal
           departments={allDepts}
+          courses={courses}
+          existingCodes={existingCodes}
           onClose={() => setShowAddModal(false)}
-          onSave={async (c) => { await addCourse(c, adminName); setShowAddModal(false); toast.success('Course added successfully'); }}
+          onSave={handleAddCourse}
           onImport={() => { setShowAddModal(false); fileInputRef.current?.click(); }}
         />
       )}
@@ -583,8 +658,14 @@ const ImportPreviewModal = ({ preview, onConfirm, onCancel }) => {
 
 // ─── Add Course Modal ──────────────────────────────────────────────────────────
 
-const AddCourseModal = ({ departments, onClose, onSave, onImport }) => {
+const AddCourseModal = ({ departments, courses, existingCodes, onClose, onSave, onImport }) => {
+  // 'lecture' is the existing flow, unchanged. 'lab' derives everything from a
+  // parent course — see src/lib/labCode.js for the naming convention.
+  const [mode, setMode] = useState('lecture');
   const [form, setForm] = useState({ code: '', name: '', level: 1, department: departments[0] || '' });
+  const [parentSearch, setParentSearch] = useState('');
+  const [parent, setParent] = useState(null);
+  const [saving, setSaving] = useState(false);
   const set = (key, val) => setForm(prev => ({ ...prev, [key]: val }));
 
   // Auto-assign level when code changes
@@ -594,10 +675,57 @@ const AddCourseModal = ({ departments, onClose, onSave, onImport }) => {
     setForm(prev => ({ ...prev, code: val, level, department }));
   };
 
-  const handleSave = () => {
+  // Parent candidates — lectures only; a lab can never be another lab's parent.
+  const parentMatches = useMemo(() => {
+    const raw = parentSearch.trim();
+    if (!raw) return [];
+    const q = raw.toLowerCase().replace(/\s+/g, '');
+    return (courses || [])
+      .filter(c => !isLabCode(c.code))
+      .filter(c => {
+        const code = String(c.code || '').toLowerCase().replace(/\s+/g, '');
+        return code.includes(q) || String(c.name || '').toLowerCase().includes(raw.toLowerCase());
+      })
+      .slice(0, 8);
+  }, [courses, parentSearch]);
+
+  // Everything about the lab is inherited — nothing here is editable.
+  const derived = parent ? {
+    code: labCodeFor(parent.code),
+    name: labNameFor(parent.name),
+    level: parent.level,
+    department: parent.department,
+  } : null;
+  const labAlreadyExists = derived ? existingCodes?.has(derived.code) : false;
+
+  const handleSave = async () => {
+    if (saving) return;
+
+    if (mode === 'lab') {
+      if (!parent) { toast.error('Select the parent course first'); return; }
+      if (labAlreadyExists) { toast.error(`${derived.code} already exists`); return; }
+      setSaving(true);
+      await onSave({ ...derived, id: `c-${Date.now()}`, bookings: {} });
+      setSaving(false);
+      return;
+    }
+
     if (!form.code.trim() || !form.name.trim()) { toast.error('Course Code and Name are required'); return; }
-    onSave({ ...form, code: normalizeCode(form.code), id: `c-${Date.now()}`, bookings: {} });
+    setSaving(true);
+    await onSave({ ...form, code: normalizeCode(form.code), id: `c-${Date.now()}`, bookings: {} });
+    setSaving(false);
   };
+
+  const TypeTab = ({ value, icon: Icon, label }) => (
+    <button
+      type="button"
+      onClick={() => setMode(value)}
+      className={`btn btn-sm ${mode === value ? 'btn-primary' : 'btn-ghost'}`}
+      style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+    >
+      <Icon size={14} /> {label}
+    </button>
+  );
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
@@ -607,43 +735,156 @@ const AddCourseModal = ({ departments, onClose, onSave, onImport }) => {
           <button className="btn btn-ghost btn-sm" onClick={onClose}><X size={16} /></button>
         </div>
         <div className="card-content space-y-3">
-          <div>
-            <label className="text-sm font-medium">Course Code</label>
-            <input
-              className="form-input"
-              value={form.code}
-              onChange={e => handleCodeChange(e.target.value)}
-              placeholder="e.g. ICS 108"
-            />
-            <p className="text-xs text-muted" style={{ marginTop: 4 }}>
-              Level and department are assigned automatically from the code.
-            </p>
+
+          {/* Course type switcher */}
+          <div style={{
+            display: 'flex', gap: 4,
+            background: 'var(--clr-surface)', border: '1px solid var(--clr-border)',
+            borderRadius: 8, padding: 4,
+          }}>
+            <TypeTab value="lecture" icon={BookOpen} label="Lecture" />
+            <TypeTab value="lab" icon={Beaker} label="Laboratory" />
           </div>
-          <div>
-            <label className="text-sm font-medium">Course Name</label>
-            <input className="form-input" value={form.name} onChange={e => set('name', e.target.value)} placeholder="e.g. Digital Logic" />
-          </div>
-          <div>
-            <label className="text-sm font-medium">Level</label>
-            <select className="form-input" value={form.level} onChange={e => set('level', parseInt(e.target.value))}>
-              <option value={1}>L1</option>
-              <option value={2}>L2</option>
-              <option value={3}>L3</option>
-              <option value={4}>L4</option>
-            </select>
-          </div>
-          <div>
-            <label className="text-sm font-medium">Department</label>
-            <select className="form-input" value={form.department} onChange={e => set('department', e.target.value)}>
-              {departments.map(d => <option key={d} value={d}>{d}</option>)}
-            </select>
-          </div>
+
+          {mode === 'lecture' ? (
+            <>
+              <div>
+                <label className="text-sm font-medium">Course Code</label>
+                <input
+                  className="form-input"
+                  value={form.code}
+                  onChange={e => handleCodeChange(e.target.value)}
+                  placeholder="e.g. ICS 108"
+                />
+                <p className="text-xs text-muted" style={{ marginTop: 4 }}>
+                  Level and department are assigned automatically from the code.
+                </p>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Course Name</label>
+                <input className="form-input" value={form.name} onChange={e => set('name', e.target.value)} placeholder="e.g. Digital Logic" />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Level</label>
+                <select className="form-input" value={form.level} onChange={e => set('level', parseInt(e.target.value))}>
+                  <option value={1}>L1</option>
+                  <option value={2}>L2</option>
+                  <option value={3}>L3</option>
+                  <option value={4}>L4</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Department</label>
+                <select className="form-input" value={form.department} onChange={e => set('department', e.target.value)}>
+                  {departments.map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <label className="text-sm font-medium">Parent Course</label>
+                {parent ? (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+                    border: '1px solid var(--clr-border)', borderRadius: 6, padding: '8px 10px', marginTop: 4,
+                  }}>
+                    <div>
+                      <div className="text-sm font-medium">{parent.code}</div>
+                      <div className="text-xs text-muted">{parent.name}</div>
+                    </div>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => { setParent(null); setParentSearch(''); }}
+                    >
+                      Change
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ position: 'relative', marginTop: 4 }}>
+                      <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--clr-muted)', pointerEvents: 'none' }} />
+                      <input
+                        className="form-input"
+                        autoFocus
+                        value={parentSearch}
+                        onChange={e => setParentSearch(e.target.value)}
+                        placeholder="Search by course code or name…"
+                        style={{ paddingLeft: 32 }}
+                      />
+                    </div>
+                    {parentSearch.trim() && (
+                      <div style={{ border: '1px solid var(--clr-border)', borderRadius: 6, marginTop: 4, maxHeight: 190, overflowY: 'auto' }}>
+                        {parentMatches.length === 0 ? (
+                          <div style={{ padding: 12, textAlign: 'center' }} className="text-xs text-muted">No courses found</div>
+                        ) : parentMatches.map(c => (
+                          <button
+                            key={c.id || c.code}
+                            type="button"
+                            onClick={() => setParent(c)}
+                            style={{
+                              display: 'block', width: '100%', textAlign: 'left',
+                              padding: '7px 10px', border: 'none', background: 'none', cursor: 'pointer',
+                              borderBottom: '1px solid var(--clr-border)',
+                            }}
+                          >
+                            <span className="text-sm font-medium">{c.code}</span>
+                            <span className="text-xs text-muted" style={{ display: 'block' }}>{c.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {derived && (
+                <div style={{ background: 'var(--clr-muted-bg)', borderRadius: 8, padding: '10px 14px' }}>
+                  <p className="text-xs font-medium" style={{ marginBottom: 8 }}>Will be created as</p>
+                  {[
+                    ['Code', derived.code],
+                    ['Name', derived.name],
+                    ['Level', `L${derived.level}`],
+                    ['Department', derived.department || '—'],
+                  ].map(([label, value]) => (
+                    <div key={label} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '2px 0' }}>
+                      <span className="text-xs text-muted">{label}</span>
+                      <span className="text-xs font-medium" style={{ textAlign: 'right' }}>{value}</span>
+                    </div>
+                  ))}
+                  <p className="text-xs text-muted" style={{ marginTop: 8, lineHeight: 1.5 }}>
+                    {parent.code}&apos;s enrollment data is copied to {derived.code} for active and
+                    upcoming terms, and re-copied on every future enrollment upload. The lab is then
+                    an ordinary course — assign a coordinator and submit its preferences as usual.
+                  </p>
+                </div>
+              )}
+
+              {labAlreadyExists && (
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6 }}>
+                  <AlertTriangle size={14} style={{ color: '#dc2626', flexShrink: 0, marginTop: 1 }} />
+                  <p className="text-xs" style={{ color: '#b91c1c', margin: 0 }}>
+                    {derived.code} already exists. {parent.code} can only have one lab.
+                  </p>
+                </div>
+              )}
+            </>
+          )}
+
           <div style={{ display: 'flex', gap: 8, paddingTop: 8 }}>
-            <button className="btn btn-primary btn-sm" onClick={handleSave}>Save</button>
-            <button className="btn btn-outline btn-sm" onClick={onClose}>Cancel</button>
-            <button className="btn btn-outline btn-sm" style={{ marginLeft: 'auto' }} onClick={onImport}>
-              <Upload size={14} /> Import Excel
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={handleSave}
+              disabled={saving || (mode === 'lab' && (!parent || labAlreadyExists))}
+            >
+              {saving ? 'Saving…' : 'Save'}
             </button>
+            <button className="btn btn-outline btn-sm" onClick={onClose} disabled={saving}>Cancel</button>
+            {mode === 'lecture' && (
+              <button className="btn btn-outline btn-sm" style={{ marginLeft: 'auto' }} onClick={onImport}>
+                <Upload size={14} /> Import Excel
+              </button>
+            )}
           </div>
         </div>
       </div>
