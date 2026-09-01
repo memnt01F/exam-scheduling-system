@@ -286,6 +286,58 @@ export async function createScheduledExamsBulk(payload) {
   return request('/bookings/bulk', { method: 'POST', body: JSON.stringify(payload) });
 }
 
+/**
+ * GET /api/schedule/export?termId= — the exam-calendar .xlsx.
+ *
+ * Includes every booking in the term except cancelled/rejected. There is no
+ * phase filter: `phaseNumber` is not reliable enough to gate the export on.
+ *
+ * Cannot go through `request()`, which assumes a JSON body; the response here is
+ * a binary workbook. Errors still arrive as JSON, so they are read back for the
+ * message.
+ *
+ * The filename comes from Content-Disposition rather than being rebuilt here —
+ * the server owns the naming, and a client-side copy would drift out of sync.
+ *
+ * @returns {Promise<{blob: Blob, filename: string, anomalyCount: number}>}
+ */
+export async function exportSchedule({ termId }) {
+  const qs = new URLSearchParams({ termId: String(termId) });
+  const res = await fetch(`${API_BASE}/schedule/export?${qs}`);
+
+  if (!res.ok) {
+    let message = res.statusText || `Export failed (${res.status})`;
+    try {
+      const data = await res.json();
+      if (data && data.message) message = data.message;
+    } catch {
+      /* non-JSON error body — keep the status text */
+    }
+    const err = new Error(message);
+    err.status = res.status;
+    throw err;
+  }
+
+  return {
+    blob: await res.blob(),
+    filename: filenameFromContentDisposition(res.headers) || 'exam_schedule.xlsx',
+    anomalyCount: Number(res.headers.get('X-Export-Anomalies') || 0),
+  };
+}
+
+/** Pull the filename out of a Content-Disposition header, if it is readable. */
+function filenameFromContentDisposition(headers) {
+  const raw = headers.get('Content-Disposition');
+  if (!raw) return null;
+  // RFC 5987 form first, then the plain quoted form.
+  const utf8 = /filename\*=UTF-8''([^;]+)/i.exec(raw);
+  if (utf8) {
+    try { return decodeURIComponent(utf8[1].trim()); } catch { /* fall through */ }
+  }
+  const plain = /filename="?([^";]+)"?/i.exec(raw);
+  return plain ? plain[1].trim() : null;
+}
+
 /* ──────────────────────────── Course Offerings ──────────────────────────── */
 
 /**

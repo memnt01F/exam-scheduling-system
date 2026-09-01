@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import AdminPreferencesView from './AdminPreferencesView.jsx';
 import AdminScheduleCalendar from './AdminScheduleCalendar.jsx';
+import ExtractScheduleButton from './ExtractScheduleButton.jsx';
 
 /* ── status config ── */
 const STATUS_CFG = {
@@ -635,7 +636,7 @@ const SchedulingManagement = ({ restrictedDepts }) => {
             )}
           </div>
           {hasSchedule ? (
-            <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flexShrink: 0 }}>
               <button
                 className="btn btn-outline btn-sm"
                 onClick={handleGenerate}
@@ -652,6 +653,11 @@ const SchedulingManagement = ({ restrictedDepts }) => {
                 <Calendar size={14} />
                 View Schedule
               </button>
+              <ExtractScheduleButton
+                termId={selectedTermId}
+                termName={selectedTerm?.name}
+                disabled={!hasSchedule}
+              />
             </div>
           ) : (
             <button
