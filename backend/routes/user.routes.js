@@ -99,7 +99,6 @@ router.get("/", async(_req, res) => {
 
 /**
  * POST /api/users — create a new user.
- * Password is always set to FIXED_PASSWORD (kfupm2026), hashed with bcrypt.
  */
 router.post("/", async(req, res) => {
     try {

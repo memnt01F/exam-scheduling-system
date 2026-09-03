@@ -4,64 +4,14 @@ const connectDB = require("../config/db");
 const User = require("../models/user.model");
 
 const SEED_USERS = [{
-        name: "Admin",
-        email: "admin@kfupm.edu.sa",
-        role: "admin",
-        department: "",
-        createdBy: "seed",
-    },
-    {
-        name: "Dr. Fatima Al-Otaibi",
-        email: "falotaibi@kfupm.edu.sa",
-        role: "deptHead",
-        department: "Information & Computer Science",
-        createdBy: "seed",
-    },
-    {
-        name: "Dr. Nasser Al-Mutairi",
-        email: "nmutairi@kfupm.edu.sa",
-        role: "deptHead",
-        department: "Information & Computer Science",
-        createdBy: "seed",
-    },
-    {
-        name: "Dr. Ahmed Al-Rashid",
-        email: "arashid@kfupm.edu.sa",
-        role: "coordinator",
-        department: "Information & Computer Science",
-        createdBy: "seed",
-    },
-    {
-        name: "Dr. Khalid Al-Dossary",
-        email: "kdossary@kfupm.edu.sa",
-        role: "coordinator",
-        department: "Information & Computer Science",
-        createdBy: "seed",
-    },
-    {
-        name: "Dr. Sara Al-Zahrani",
-        email: "szahrani@kfupm.edu.sa",
-        role: "coordinator",
-        department: "Information & Computer Science",
-        createdBy: "seed",
-    },
-    {
-        name: "Dr. Layla Al-Qahtani",
-        email: "lqahtani@kfupm.edu.sa",
-        role: "coordinator",
-        department: "Mathematics",
-        createdBy: "seed",
-    },
-    {
-        name: "H. Jamaan",
-        email: "hjamaan@kfupm.edu.sa",
-        role: "coordinator",
-        department: "Information & Computer Science",
-        createdBy: "seed",
-    },
-];
+    name: "Admin",
+    email: "admin@kfupm.edu.sa",
+    role: "admin",
+    department: "",
+    createdBy: "seed",
+}, ];
 
-const FIXED_PASSWORD = "ExamSchdulingCCM";
+const FIXED_PASSWORD = "ExamSchedulingCCM";
 const SALT_ROUNDS = 10;
 
 async function run() {

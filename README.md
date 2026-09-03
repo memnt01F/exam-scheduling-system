@@ -183,70 +183,13 @@ The seeded accounts are exactly the ones listed in the [Test Accounts](#test-acc
 
 Use the following credentials to log in and explore different roles.
 
-> **All accounts use the password `kfupm1234`.**
 
 | Name | Email | Role | Password |
 |------|-------|------|----------|
 | Admin | admin@kfupm.edu.sa | **Admin** | `kfupm1234` |
-| Dr. Fatima Al-Otaibi | falotaibi@kfupm.edu.sa | Committee | `kfupm1234` |
-| Dr. Nasser Al-Mutairi | nmutairi@kfupm.edu.sa | Committee | `kfupm1234` |
-| Dr. Ahmed Al-Rashid | arashid@kfupm.edu.sa | Coordinator | `kfupm1234` |
-| Dr. Khalid Al-Dossary | kdossary@kfupm.edu.sa | Coordinator | `kfupm1234` |
-| Dr. Sara Al-Zahrani | szahrani@kfupm.edu.sa | Coordinator | `kfupm1234` |
-| Dr. Layla Al-Qahtani | lqahtani@kfupm.edu.sa | Coordinator | `kfupm1234` |
-| H. Jamaan | hjamaan@kfupm.edu.sa | Coordinator | `kfupm1234` |
 
 ---
 
-## Testing Guide for Graders
-
-### How to Test Conflict Detection
-
-The system automatically prevents booking two courses on the same date if students are enrolled in both. To test conflict detection:
-
-1. Log in as **H. Jamaan** (`hjamaan@kfupm.edu.sa` / `kfupm1234`) — this account is assigned to **SWE206** and is ideal for testing conflicts.
-2. Go to the **Booking Page**.
-3. Create a booking for the first course on a specific date.
-4. Try to create a booking for the second course on the **same date**.
-5. The system should either block the booking (conflict detected) or allow it (no shared students).
-
----
-
-### Conflict Test Cases
-
-#### ✅ Should NOT trigger a conflict (safe to book on the same date)
-
-| Course A | Course B | Reason |
-|----------|----------|--------|
-| SWE206 | ICS344 | No shared students |
-| SWE206 | CHEM101 | No shared students |
-| SWE206 | CHEM102 | No shared students |
-| ICS344 | ICS202 | No shared students |
-| ICS344 | PHYS101 | No shared students |
-| ICS253 | CHEM102 | No shared students |
-| CHEM101 | CHEM102 | No shared students |
-| STAT201 | PHYS101 | No shared students |
-| STAT201 | PHYS102 | No shared students |
-| MATH101 | MATH102 | No shared students |
-| PHYS101 | PHYS102 | No shared students |
-| ICS108 | ICS202 | No shared students |
-| ICS202 | ICS104 | No shared students |
-
----
-
-#### ❌ Should trigger a conflict (must NOT be booked on the same date)
-
-| Course A | Course B | Expected Result |
-|----------|----------|-----------------|
-| SWE206 | MATH201 | 🚫 Conflict detected |
-| ICS344 | ICS253 | 🚫 Conflict detected |
-| CHEM101 | PHYS101 | 🚫 Conflict detected |
-| MATH201 | ICS202 | 🚫 Conflict detected |
-| SWE206 | ICS202 | 🚫 Conflict detected |
-
-> **How conflicts work:** The system checks the enrollment database to find students enrolled in both courses. If any shared students exist, booking them on the same date is blocked with a `409 Conflict` response.
-
----
 
 ## API Documentation
 
