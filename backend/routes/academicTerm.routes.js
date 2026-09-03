@@ -5,10 +5,12 @@
  * currently-active term to `status="past"`.
  */
 const express = require("express");
+const mongoose = require("mongoose");
 const AcademicTerm = require("../models/academicTerm.model");
 const Phase = require("../models/phase.model");
 const CoursePreference = require("../models/coursePreference.model");
 const AuditLog = require("../models/auditLog.model");
+const SolverRunLog = require("../models/solverRunLog.model");
 
 const router = express.Router();
 
@@ -131,6 +133,65 @@ router.delete("/:id", async (req, res) => {
       details: `Deleted term ${term.name}`,
     });
     res.json({ message: "Term deleted", term });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+
+/**
+ * GET /api/terms/:id/solver-logs?phase=&limit=
+ *
+ * Scheduler run logs for a term, newest first. Read-only: these documents are
+ * written by the Python scheduler service, never by this API.
+ *
+ * The solver's warnings used to be returned in the /solve response and then
+ * thrown away. This is where they now live, so a silent decision (a course
+ * defaulting to "Two Majors", a course skipped because it was already booked)
+ * can be read back long after the run.
+ */
+router.get("/:id/solver-logs", async (req, res) => {
+  try {
+    // Guard the cast: findById on a malformed id throws a Mongoose
+    // CastError, which would surface as a 500 leaking internals.
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(404).json({ message: "Term not found" });
+    }
+    const term = await AcademicTerm.findById(req.params.id);
+    if (!term) return res.status(404).json({ message: "Term not found" });
+
+    const query = { termId: term._id };
+    if (req.query.phase !== undefined && String(req.query.phase).trim() !== "") {
+      // Validate rather than coerce: Number("") is 0, so a bare cast would
+      // silently turn a typo into phase 0.
+      if (!/^[0-9]+$/.test(String(req.query.phase).trim())) {
+        return res.status(400).json({ message: "phase must be a non-negative integer." });
+      }
+      query.phaseNumber = Number(req.query.phase);
+    }
+
+    let limit = 50;
+    if (req.query.limit !== undefined && String(req.query.limit).trim() !== "") {
+      if (!/^[0-9]+$/.test(String(req.query.limit).trim())) {
+        return res.status(400).json({ message: "limit must be a positive integer." });
+      }
+      limit = Math.min(Math.max(Number(req.query.limit), 1), 200);
+    }
+
+    const logs = await SolverRunLog.find(query)
+      .sort({ finishedAt: -1 })
+      .limit(limit)
+      .lean();
+
+    res.json({
+      termId: term._id,
+      termName: term.name,
+      // The term's own compact index, so a caller can see the run history
+      // per phase without paging through the full documents.
+      index: term.solverLogs || {},
+      count: logs.length,
+      logs,
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
