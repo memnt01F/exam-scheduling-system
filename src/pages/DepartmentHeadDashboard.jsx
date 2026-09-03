@@ -22,7 +22,7 @@ const tabs = [
 ];
 
 /* ── Searchable Select ── */
-const SearchableSelect = ({ value, onChange, options, placeholder = '— Unassigned —' }) => {
+const SearchableSelect = ({ value, onChange, options, placeholder = '— Unassigned —', disabled = false }) => {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const ref = useRef(null);
@@ -43,8 +43,9 @@ const SearchableSelect = ({ value, onChange, options, placeholder = '— Unassig
       <button
         type="button"
         className="form-input"
-        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', textAlign: 'left', width: '100%' }}
-        onClick={() => { setOpen(o => !o); setSearch(''); }}
+        disabled={disabled}
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: disabled ? 'default' : 'pointer', textAlign: 'left', width: '100%', opacity: disabled ? 0.6 : 1 }}
+        onClick={() => { if (disabled) return; setOpen(o => !o); setSearch(''); }}
       >
         <span style={{ color: selected ? 'inherit' : 'var(--clr-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {selected ? selected.label : placeholder}
@@ -95,7 +96,7 @@ const SearchableSelect = ({ value, onChange, options, placeholder = '— Unassig
 /* ── Assignments tab ── */
 const PAGE_SIZE = 25;
 
-const AssignmentsTab = ({ deptCourses, coordinators, assignments, setAssignments, saving, onSave }) => {
+const AssignmentsTab = ({ deptCourses, coordinators, assignments, onAssign, savingCodes }) => {
   const [deptFilter, setDeptFilter] = useState('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -138,9 +139,6 @@ const AssignmentsTab = ({ deptCourses, coordinators, assignments, setAssignments
             {depts.map(d => <option key={d} value={d}>{d}</option>)}
           </select>
         )}
-        <button className="btn btn-primary btn-sm" onClick={onSave} disabled={saving}>
-          {saving ? 'Saving…' : 'Save Assignments'}
-        </button>
       </div>
 
       <div className="card">
@@ -164,11 +162,15 @@ const AssignmentsTab = ({ deptCourses, coordinators, assignments, setAssignments
                     <td className="text-sm">{c.level}</td>
                     <td className="text-sm">{c.department}</td>
                     <td>
-                      <SearchableSelect
-                        value={assignments[c.code] || ''}
-                        onChange={val => setAssignments(prev => ({ ...prev, [c.code]: val }))}
-                        options={coordinators.map(coord => ({ value: coord.id, label: coord.name }))}
-                      />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <SearchableSelect
+                          value={assignments[c.code] || ''}
+                          onChange={val => onAssign(c.code, val)}
+                          options={coordinators.map(coord => ({ value: coord.id, label: coord.name }))}
+                          disabled={!!savingCodes[c.code]}
+                        />
+                        
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -791,7 +793,9 @@ const DepartmentHeadDashboard = () => {
   );
 
   const [assignments, setAssignments] = useState({});
-  const [saving, setSaving] = useState(false);
+  // In-flight saves, keyed by course code. Assignments save the moment a
+  // coordinator is picked, so the row has to show its own progress.
+  const [savingCodes, setSavingCodes] = useState({});
 
   // Load all assignments globally (no term filter)
   useEffect(() => {
@@ -806,19 +810,48 @@ const DepartmentHeadDashboard = () => {
       .catch(() => {});
   }, []);
 
-  const handleSave = async () => {
-    setSaving(true);
+  /**
+   * Persist one course's coordinator as soon as it is picked.
+   *
+   * Applies the change locally first so the dropdown stays responsive, then
+   * reverts it if the request fails — the row must never show a coordinator
+   * that isn't actually stored. Sends only the changed course rather than the
+   * whole department, so one dept head's stale map can't clobber another's edits.
+   */
+  const handleAssign = async (courseCode, coordinatorId) => {
+    const prevId = assignments[courseCode] || '';
+    if (prevId === coordinatorId) return;   // re-picked the same coordinator
+    if (savingCodes[courseCode]) return;    // this row is already in flight
+
+    // Unassigning deletes the key rather than storing '', keeping the map the
+    // same shape getAssignments() builds on load.
+    const applyId = (map, id) => {
+      const next = { ...map };
+      if (id) next[courseCode] = id;
+      else delete next[courseCode];
+      return next;
+    };
+
+    setAssignments(prev => applyId(prev, coordinatorId));
+    setSavingCodes(prev => ({ ...prev, [courseCode]: true }));
+
     try {
-      const payload = deptCourses.map(c => ({
-        courseCode: c.code,
-        coordinatorId: assignments[c.code] || '',
-      }));
-      await bulkSaveAssignments(payload, user?.name || 'Dept Head');
-      toast.success('Assignments saved successfully');
+      await bulkSaveAssignments([{ courseCode, coordinatorId }], user?.name || 'Dept Head');
+      const coordName = coordinators.find(co => co.id === coordinatorId)?.name;
+      toast.success(
+        coordinatorId
+          ? `${courseCode} assigned to ${coordName || 'coordinator'}`
+          : `${courseCode} is now unassigned`
+      );
     } catch (err) {
-      toast.error(err?.message || 'Failed to save assignments');
+      setAssignments(prev => applyId(prev, prevId));
+      toast.error(err?.message || `Could not save assignment for ${courseCode}`);
     } finally {
-      setSaving(false);
+      setSavingCodes(prev => {
+        const next = { ...prev };
+        delete next[courseCode];
+        return next;
+      });
     }
   };
 
@@ -854,9 +887,8 @@ const DepartmentHeadDashboard = () => {
             deptCourses={deptCourses}
             coordinators={coordinators}
             assignments={assignments}
-            setAssignments={setAssignments}
-            saving={saving}
-            onSave={handleSave}
+            onAssign={handleAssign}
+            savingCodes={savingCodes}
           />
         )}
 
