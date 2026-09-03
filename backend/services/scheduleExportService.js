@@ -315,6 +315,12 @@ function stampParts(now) {
   return { date: shifted.slice(0, 10), time: shifted.slice(11, 16).replace(":", "") };
 }
 
+/** An instant rendered in Asia/Riyadh, for humans reading the workbook. */
+function localStamp(now) {
+  const shifted = new Date(now.getTime() + EXPORT_TZ_OFFSET_MINUTES * 60000);
+  return `${shifted.toISOString().slice(0, 16).replace("T", " ")} (Asia/Riyadh)`;
+}
+
 function buildFilename({ termName, now }) {
   const { date, time } = stampParts(now);
   const term = `Term-${String(termName || "").trim()}`;
@@ -757,7 +763,7 @@ function appendLogSheet({
   ws.getRow(1).font = { ...FONT_BOLD, size: 10 };
 
   const summary = [
-    ["Generated (UTC)", now.toISOString()],
+    ["Generated", localStamp(now)],
     ["Term", String(term.name)],
     [
       "Scope",
